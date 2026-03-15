@@ -14,6 +14,15 @@ import (
 	sort "sort"
 )
 
+// TickServiceHandler is the handler interface for TickService.
+type TickServiceHandler interface {
+	Watch(
+		context.Context,
+		*procframe.Request[TickRequest],
+		procframe.ServerStream[TickResponse],
+	) error
+}
+
 // NewTickServiceCLIRunner constructs a [cli.Runner]
 // for TickService.
 func NewTickServiceCLIRunner(h TickServiceHandler, opts ...cli.Option) *cli.Runner {

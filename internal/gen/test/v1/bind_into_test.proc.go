@@ -14,43 +14,49 @@ import (
 	sort "sort"
 )
 
-// NewEchoServiceCLIRunner constructs a [cli.Runner]
-// for EchoService.
-func NewEchoServiceCLIRunner(h EchoServiceHandler, opts ...cli.Option) *cli.Runner {
-	node_echo_run := &cli.Node{
-		Segment: "run",
-		Summary: "Echo a message",
+// PRServiceHandler is the handler interface for PRService.
+type PRServiceHandler interface {
+	List(
+		context.Context,
+		*procframe.Request[PRListRequest],
+	) (*procframe.Response[PRListResponse], error)
+}
+
+// NewPRServiceCLIRunner constructs a [cli.Runner]
+// for PRService.
+func NewPRServiceCLIRunner(h PRServiceHandler, opts ...cli.Option) *cli.Runner {
+	var bind_pr_state int32
+	node_repo_pr_list := &cli.Node{
+		Segment: "list",
+		Summary: "List pull requests",
 		Run: func(ctx context.Context, args []string, stdout io.Writer) error {
-			var req *EchoRequest
+			var req *PRListRequest
 			if jsonPayload, ok := cli.JSONPayloadFromContext(ctx); ok {
 				if len(args) > 0 {
 					return &procframe.Error{Code: procframe.CodeInvalidArgument, Message: "--json cannot be combined with flags"}
 				}
-				req = &EchoRequest{}
+				req = &PRListRequest{}
 				if err := protojson.Unmarshal([]byte(jsonPayload), req); err != nil {
 					return err
 				}
 			} else {
-				fs := flag.NewFlagSet("run", flag.ContinueOnError)
+				fs := flag.NewFlagSet("list", flag.ContinueOnError)
 				fs.SetOutput(io.Discard)
-				var flag_message string
-				fs.StringVar(&flag_message, "message", "", "")
-				var flag_count int32
-				fs.Var(cli.NewInt32Value(&flag_count), "count", "")
-				var flag_uppercase bool
-				fs.BoolVar(&flag_uppercase, "uppercase", false, "")
+				var flag_limit int32
+				fs.Var(cli.NewInt32Value(&flag_limit), "limit", "")
 				if err := fs.Parse(args); err != nil {
 					return err
 				}
-				req = &EchoRequest{
-					Message:   flag_message,
-					Count:     flag_count,
-					Uppercase: flag_uppercase,
+				req = &PRListRequest{
+					Pr: &PRScope{
+						State: PRState(bind_pr_state),
+					},
+					Limit: flag_limit,
 				}
 			}
-			resp, err := h.Echo(ctx, &procframe.Request[EchoRequest]{
+			resp, err := h.List(ctx, &procframe.Request[PRListRequest]{
 				Msg:  req,
-				Meta: procframe.Meta{Procedure: "/test.v1.EchoService/Echo"},
+				Meta: procframe.Meta{Procedure: "/test.v1.PRService/List"},
 			})
 			if err != nil {
 				return err
@@ -71,16 +77,31 @@ func NewEchoServiceCLIRunner(h EchoServiceHandler, opts ...cli.Option) *cli.Runn
 			return nil
 		},
 	}
-	node_echo := &cli.Node{
-		Segment: "echo",
-		Summary: "Echo operations",
+	node_repo_pr := &cli.Node{
+		Segment: "pr",
+		Summary: "Pull request operations",
+		FlagSet: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("pr", flag.ContinueOnError)
+			fs.SetOutput(io.Discard)
+			fs.Var(cli.NewEnumValue(&bind_pr_state, []cli.EnumMapping{
+				{CLIValue: "open", Number: 1},
+				{CLIValue: "closed", Number: 2},
+			}, "PRState"), "state", "")
+			return fs
+		}(),
 		Children: map[string]*cli.Node{
-			"run": node_echo_run,
+			"list": node_repo_pr_list,
+		},
+	}
+	node_repo := &cli.Node{
+		Segment: "repo",
+		Children: map[string]*cli.Node{
+			"pr": node_repo_pr,
 		},
 	}
 	root := &cli.Node{
 		Children: map[string]*cli.Node{
-			"echo": node_echo,
+			"repo": node_repo,
 		},
 	}
 	root.Children["schema"] = &cli.Node{
@@ -88,35 +109,32 @@ func NewEchoServiceCLIRunner(h EchoServiceHandler, opts ...cli.Option) *cli.Runn
 		Summary: "Show procedure schemas",
 		Run: func(_ context.Context, args []string, stdout io.Writer) error {
 			schemas := map[string]cli.SchemaInfo{
-				"/test.v1.EchoService/Echo": {
-					Procedure: "/test.v1.EchoService/Echo",
+				"/test.v1.PRService/List": {
+					Procedure: "/test.v1.PRService/List",
 					Request: cli.SchemaMessage{
-						FullName: "test.v1.EchoRequest",
+						FullName: "test.v1.PRListRequest",
 						Fields: []cli.SchemaField{
 							{
-								Name: "message",
-								Type: "string",
+								Name: "repo",
+								Type: "message",
 							},
 							{
-								Name: "count",
+								Name: "pr",
+								Type: "message",
+							},
+							{
+								Name: "limit",
 								Type: "int32",
-							},
-							{
-								Name: "uppercase",
-								Type: "bool",
 							},
 						},
 					},
 					Response: cli.SchemaMessage{
-						FullName: "test.v1.EchoResponse",
+						FullName: "test.v1.PRListResponse",
 						Fields: []cli.SchemaField{
 							{
-								Name: "message",
-								Type: "string",
-							},
-							{
-								Name: "count",
-								Type: "int32",
+								Name:     "items",
+								Type:     "string",
+								Repeated: true,
 							},
 						},
 					},
