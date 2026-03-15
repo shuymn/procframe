@@ -17,6 +17,54 @@ import (
 // NewCliOptionsTestServiceCLIRunner constructs a [cli.Runner]
 // for CliOptionsTestService.
 func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...cli.Option) *cli.Runner {
+	node_cliopts_ws_enabled := &cli.Node{
+		Segment: "ws-enabled",
+		Summary: "WS enabled, CLI default",
+		Run: func(ctx context.Context, args []string, stdout io.Writer) error {
+			var req *PingRequest
+			if jsonPayload, ok := cli.JSONPayloadFromContext(ctx); ok {
+				if len(args) > 0 {
+					return &procframe.Error{Code: procframe.CodeInvalidArgument, Message: "--json cannot be combined with flags"}
+				}
+				req = &PingRequest{}
+				if err := protojson.Unmarshal([]byte(jsonPayload), req); err != nil {
+					return err
+				}
+			} else {
+				fs := flag.NewFlagSet("ws-enabled", flag.ContinueOnError)
+				fs.SetOutput(io.Discard)
+				var flag_target string
+				fs.StringVar(&flag_target, "target", "", "")
+				if err := fs.Parse(args); err != nil {
+					return err
+				}
+				req = &PingRequest{
+					Target: flag_target,
+				}
+			}
+			resp, err := h.WsEnabled(ctx, &procframe.Request[PingRequest]{
+				Msg:  req,
+				Meta: procframe.Meta{Procedure: "/test.v1.CliOptionsTestService/WsEnabled"},
+			})
+			if err != nil {
+				return err
+			}
+			if resp == nil || resp.Msg == nil {
+				return &procframe.Error{Code: procframe.CodeInternal, Message: "handler returned nil response"}
+			}
+			var out []byte
+			if cli.OutputFormatFromContext(ctx) == cli.OutputJSON {
+				out, err = protojson.MarshalOptions{}.Marshal(resp.Msg)
+			} else {
+				out, err = protojson.MarshalOptions{Multiline: true}.Marshal(resp.Msg)
+			}
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(stdout, string(out))
+			return nil
+		},
+	}
 	node_cliopts_default_enabled := &cli.Node{
 		Segment: "default-enabled",
 		Summary: "Default CLI enabled",
@@ -113,61 +161,13 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 			return nil
 		},
 	}
-	node_cliopts_ws_enabled := &cli.Node{
-		Segment: "ws-enabled",
-		Summary: "WS enabled, CLI default",
-		Run: func(ctx context.Context, args []string, stdout io.Writer) error {
-			var req *PingRequest
-			if jsonPayload, ok := cli.JSONPayloadFromContext(ctx); ok {
-				if len(args) > 0 {
-					return &procframe.Error{Code: procframe.CodeInvalidArgument, Message: "--json cannot be combined with flags"}
-				}
-				req = &PingRequest{}
-				if err := protojson.Unmarshal([]byte(jsonPayload), req); err != nil {
-					return err
-				}
-			} else {
-				fs := flag.NewFlagSet("ws-enabled", flag.ContinueOnError)
-				fs.SetOutput(io.Discard)
-				var flag_target string
-				fs.StringVar(&flag_target, "target", "", "")
-				if err := fs.Parse(args); err != nil {
-					return err
-				}
-				req = &PingRequest{
-					Target: flag_target,
-				}
-			}
-			resp, err := h.WsEnabled(ctx, &procframe.Request[PingRequest]{
-				Msg:  req,
-				Meta: procframe.Meta{Procedure: "/test.v1.CliOptionsTestService/WsEnabled"},
-			})
-			if err != nil {
-				return err
-			}
-			if resp == nil || resp.Msg == nil {
-				return &procframe.Error{Code: procframe.CodeInternal, Message: "handler returned nil response"}
-			}
-			var out []byte
-			if cli.OutputFormatFromContext(ctx) == cli.OutputJSON {
-				out, err = protojson.MarshalOptions{}.Marshal(resp.Msg)
-			} else {
-				out, err = protojson.MarshalOptions{Multiline: true}.Marshal(resp.Msg)
-			}
-			if err != nil {
-				return err
-			}
-			fmt.Fprintln(stdout, string(out))
-			return nil
-		},
-	}
 	node_cliopts := &cli.Node{
 		Segment: "cliopts",
 		Summary: "CLI options test",
 		Children: map[string]*cli.Node{
+			"default-enabled":  node_cliopts_default_enabled,
 			"explicit-enabled": node_cliopts_explicit_enabled,
 			"ws-enabled":       node_cliopts_ws_enabled,
-			"default-enabled":  node_cliopts_default_enabled,
 		},
 	}
 	root := &cli.Node{
