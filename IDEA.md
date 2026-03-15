@@ -45,6 +45,7 @@ HTTP / gRPC は **未実装**だが、将来追加しても破綻しないよう
 * request/response の schema は **proto を single source of truth** にしたい
 * config も transport も **codegen で boilerplate を消したい**
 * ただし最初から機能を盛り込みすぎたくない
+* CLI は human だけでなく **AI agent からも呼ばれる前提**で設計したい
 
 そのため、v0.1 は次の思想で固定する。
 
@@ -78,6 +79,12 @@ proto schema
 
   * `cli = true`
   * `ws = false`
+* `--json` で raw protojson payload を request として受け付ける
+* `schema` サブコマンドで procedure の request/response schema を JSON 出力
+* `--output json` で構造化出力
+* exit code mapping
+* 構造化 error (retryable 付き)
+* stdout/stderr 分離
 
 ## 3.2 v0.1 でやらないこと
 
@@ -91,6 +98,11 @@ proto schema
 * reflection ベースの汎用 registry
 * option の複数記法
 * CLI/WS 以外の transport codegen
+* `--dry-run` フレームワーク組み込み
+* MCP transport
+* NDJSON pagination / field mask
+* `--sanitize`
+* batch・stdin pipe
 
 ---
 
@@ -134,6 +146,13 @@ WS に出したいものだけ `ws: true` を付ける。
 
 `app repo --org my pr list` の `--org` は、CLI 専用の裏値ではなく、最終 request に詰まる値でなければならない。
 CLI と WS で request schema が分裂しないようにする。
+
+## 4.6 CLI は human と agent の両方に使われる前提で設計する
+
+* human 向けは flat flags、agent 向けは `--json` raw payload。同じ handler から両方を処理する
+* schema introspection は proto から自動導出。CLI 自体が self-describing な docs になる
+* stdout は結果データのみ、ログ/help は stderr
+* format 切り替えは transport 層の責務、handler は output format も input source も知らない
 
 ---
 
@@ -187,6 +206,9 @@ procframe/
     cli/
       runner.go
       help.go
+      output.go
+      exitcode.go
+      schema.go
     ws/
       handler.go
       frame.go
@@ -282,17 +304,21 @@ client-stream / bidi は入れない。
 type Code string
 
 const (
-	CodeInvalidArgument Code = "invalid_argument"
-	CodeNotFound        Code = "not_found"
-	CodeInternal        Code = "internal"
-	CodeUnauthenticated Code = "unauthenticated"
-	CodeUnavailable     Code = "unavailable"
+	CodeInvalidArgument  Code = "invalid_argument"
+	CodeNotFound         Code = "not_found"
+	CodeInternal         Code = "internal"
+	CodeUnauthenticated  Code = "unauthenticated"
+	CodeUnavailable      Code = "unavailable"
+	CodeAlreadyExists    Code = "already_exists"
+	CodePermissionDenied Code = "permission_denied"
+	CodeConflict         Code = "conflict"
 )
 
 type Error struct {
-	Code    Code
-	Message string
-	Cause   error
+	Code      Code
+	Message   string
+	Cause     error
+	Retryable bool
 }
 ```
 
@@ -367,7 +393,7 @@ app --config config.json --log-level debug repo pr list --limit 20
 
 ## 9.1 CLI
 
-CLI は human-facing transport。
+CLI は human と agent の両方に使われる transport。
 再帰的サブコマンド tree を持つ。
 
 ### 役割
@@ -383,6 +409,45 @@ CLI は human-facing transport。
 
 * unary -> stdout
 * server-stream -> chunk ごとに stdout
+
+### input mode
+
+2 つの入力経路を持つ。
+
+* **flat flags** (human path): group flags + leaf flags から request を構築する。従来通り `bind_into` が機能する
+* **`--json` raw payload** (agent path): protojson を直接 unmarshal して request を構築する。`--json` 指定時は flags を無視する。group bind (`bind_into`) は不要で、request 全体を JSON で渡す
+
+`--json` と flags の併用は error とする。
+
+### schema サブコマンド
+
+`app schema <procedure-path>` で request/response の JSON Schema 相当を出力する。
+
+* proto descriptor から codegen で生成する
+* agent が system prompt に docs を抱えなくて済む
+* runtime の reflection は使わない
+
+### output format
+
+* **text** (default): human-readable な出力
+* **json** (`--output json`): protojson を stdout に出力。server-stream は NDJSON
+
+### stdout/stderr 分離
+
+* 結果データは stdout
+* ログ、help、error メッセージは stderr
+
+### exit code mapping
+
+Code -> exit code の定数 table を持つ。handler が返す Code に応じた exit code で終了する。
+
+### error の構造化出力
+
+`--output json` 時は error も JSON で stderr に出力する。
+
+```json
+{"error":{"code":"invalid_argument","message":"limit must be positive","retryable":false}}
+```
 
 ## 9.2 WS
 
@@ -691,6 +756,12 @@ func NewBotServiceCLIRunner(h BotServiceHandler) *cli.Runner
 * static command tree を持つ
 * leaf ごとの `flag.FlagSet` parser を使う
 * group flags を request に bind する
+* `--json` flag (leaf command ごと) と protojson unmarshal
+* `schema` サブコマンドの static 生成
+* `--output text|json` global flag
+* exit code mapping
+* JSON/NDJSON 出力
+* help の stderr 出力
 
 ## 15.3 WS handler
 
@@ -747,6 +818,39 @@ type commandNode struct {
 ```
 
 `Run()` は tree を辿るだけ。
+
+## 16.4 input mode
+
+flags path と `--json` path の分岐ロジック。
+
+* `--json` が指定されたら flags parsing をスキップし、protojson を直接 unmarshal する
+* `--json` と flags の併用は error を返す
+* `--json` path では group bind は不要。request 全体を JSON で受け取る
+
+## 16.5 schema コマンド
+
+codegen が procedure ごとに request/response の型情報を static に埋め込む。
+
+* runtime の reflection は使わない
+* proto descriptor から codegen 時に JSON 表現を生成する
+* `app schema <procedure-path>` で request/response の schema を stdout に出力する
+
+## 16.6 output rendering
+
+* **text mode**: protojson をそのまま出力する (default)
+* **json mode** (`--output json`): protojson を stdout に出力する。server-stream は NDJSON (1 chunk 1 行)
+
+format 切り替えは runner の責務。handler は output format を知らない。
+
+## 16.7 help 出力
+
+* help は stderr に出力する
+* 必須フラグ・型・default・exit code 一覧を含む
+* proto の field 情報から codegen で生成する
+
+## 16.8 exit code mapping
+
+runtime パッケージに Code -> exit code の定数 table を持つ。
 
 ---
 
@@ -881,6 +985,11 @@ handler は次を知らない。
 
 これで HTTP / gRPC / Connect を将来足しても core は崩れない。
 
+### 19.6 MCP transport は CLI と同じ core から生やす
+
+proto が schema の single source of truth なので、MCP tool schema も proto から自動導出可能。
+CLI transport と同じ handler・error・meta の仕組みの上に MCP adapter を載せる形になる。
+
 ---
 
 ## 20. 比較
@@ -952,6 +1061,86 @@ message: ".app.bot.v1.RepoScope"
 * 安全
 * わかりやすい
 * 将来 HTTP/gRPC 追加とも相性が良い
+
+**採用**
+
+---
+
+## 20.7 CLI 入力は flat flags のみの案
+
+### 問題
+
+* agent は nested JSON を自然に生成できるが、flat flags では nested struct を表現しにくい
+* agent が flag 名を正確に把握するには外部 docs が必要
+* proto で request が定義済みなのに、flags だけに制限する理由がない
+
+## 20.8 flat flags + `--json` raw payload 両対応の案
+
+### 長所
+
+* human は従来通り flat flags を使える
+* agent は `--json` で protojson を直接渡せる
+* proto が schema なので protojson unmarshal するだけで実装コストが低い
+* codegen で leaf command に `--json` flag を生成するだけ
+
+**採用**
+
+---
+
+## 20.9 schema は将来送りの案
+
+### 問題
+
+* agent が runtime で method signature を問い合わせる手段がない
+* system prompt に全 docs を抱える必要がある
+* proto descriptor から生成できるのに先送りする理由が薄い
+
+## 20.10 v0.1 で schema コマンドを生成する案
+
+### 長所
+
+* proto descriptor から codegen で生成でき低コスト
+* agent の self-discovery に直結する
+* CLI 自体が self-describing な docs になる
+
+**採用**
+
+---
+
+## 20.11 CLI output を常に JSON にする案
+
+### 問題
+
+* human が読みにくい
+* 既存 CLI の慣習に反する
+
+## 20.12 `--output` flag で切り替える案
+
+### 長所
+
+* human は text (default) で読みやすく、agent は `--output json` で構造化データを得られる
+* format 切り替えは transport 層の責務で handler に影響しない
+
+**採用**
+
+---
+
+## 20.13 error に全 agent フィールドを入れる案
+
+例: `suggested_action`, `failed_input`, `retry_after` 等を全て v0.1 で入れる。
+
+### 問題
+
+* フィールドが安定するまで試行錯誤が必要
+* v0.1 で必要十分なのは retryable だけ
+* 不要なフィールドを持つと互換性負担が増える
+
+## 20.14 retryable のみ追加する案
+
+### 長所
+
+* 最小限の変更で agent に有用な情報を提供できる
+* 将来 `suggested_action` 等を足す余地を残しつつ、v0.1 の複雑度を抑える
 
 **採用**
 
@@ -1184,6 +1373,38 @@ func (h *RepoHandler) Watch(
 
 ---
 
+## 21.7 CLI の agent-first 機能
+
+```bash
+# human path: flat flags
+app repo --org my pr list --limit 20
+
+# agent path: raw JSON payload
+app repo pr list --json '{"repo":{"org":"my"},"pr":{"state":"open"},"limit":20}'
+
+# schema introspection
+app schema repo pr list
+# stdout: {"procedure":"/app.bot.v1.RepoPRService/List","request":{...},"response":{...}}
+
+# structured output
+app --output json repo pr list --limit 20
+# stdout: {"items":["a","b"]}
+
+# structured error
+app --output json repo pr list --limit -1
+# stderr: {"error":{"code":"invalid_argument","message":"limit must be positive","retryable":false}}
+# exit code: 2
+
+# server-stream NDJSON
+app --output json repo pr watch
+# stdout:
+# {"text":"he","done":false}
+# {"text":"llo","done":false}
+# {"done":true}
+```
+
+---
+
 ## 22. main のイメージ
 
 ```go
@@ -1236,6 +1457,12 @@ transport 起動の orchestration は app 側に残す。
 * service root は常に無効
 * dead CLI group は prune
 * Discord は core の外
+* `--json` raw payload 入力 (agent path)
+* `schema` サブコマンド (proto から自動生成)
+* `--output json` 構造化出力
+* stdout/stderr 分離
+* exit code mapping
+* Error.Retryable
 
 ### 不採用
 
@@ -1245,6 +1472,10 @@ transport 起動の orchestration は app 側に残す。
 * YAML 初期対応
 * Discord transport の内蔵
 * default all transports true
+* CLI output 常時 JSON 化
+* MCP transport の v0.1 組み込み
+* `--dry-run` フレームワーク組み込み
+* error の suggested_action / failed_input
 
 ---
 
@@ -1270,6 +1501,15 @@ transport 起動の orchestration は app 側に残す。
 * inbound / outbound / error / eos
 * unary / stream の表現
 * request id の扱い
+
+### 24.4 Agent-first 拡張の次段階
+
+* `--dry-run` の handler 側インターフェース設計
+* schema コマンドの出力形式の正式仕様 (JSON Schema 互換にするか等)
+* error の追加フィールド (suggested_action, failed_input)
+* MCP transport の設計
+* NDJSON pagination / field mask
+* `--sanitize` (response sanitization)
 
 ---
 
