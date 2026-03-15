@@ -356,7 +356,7 @@ const file_test_v1_bind_into_test_proto_rawDesc = "" +
 	"\n" +
 	"\n" +
 	"\x04repo\n" +
-	"\x02pr\x12\x02pr\x1a\x17Pull request operationsB0Z.github.com/shuymn/procframe/gen/test/v1;testv1b\x06proto3"
+	"\x02pr\x12\x02pr\x1a\x17Pull request operationsB9Z7github.com/shuymn/procframe/internal/gen/test/v1;testv1b\x06proto3"
 
 var (
 	file_test_v1_bind_into_test_proto_rawDescOnce sync.Once

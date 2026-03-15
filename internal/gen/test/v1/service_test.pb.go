@@ -153,7 +153,7 @@ const file_test_v1_service_test_proto_rawDesc = "" +
 	"\x05\n" +
 	"\x03run\"\x0eEcho a message\x1a\x1d\x8a\xb2\x19\x19\n" +
 	"\x06\n" +
-	"\x04echo\x1a\x0fEcho operationsB0Z.github.com/shuymn/procframe/gen/test/v1;testv1b\x06proto3"
+	"\x04echo\x1a\x0fEcho operationsB9Z7github.com/shuymn/procframe/internal/gen/test/v1;testv1b\x06proto3"
 
 var (
 	file_test_v1_service_test_proto_rawDescOnce sync.Once

@@ -2,9 +2,9 @@ syntax = "proto3";
 
 package test.v1;
 
-option go_package = "github.com/shuymn/procframe/gen/test/v1;testv1";
-
 import "procframe/options/v1/options.proto";
+
+option go_package = "github.com/shuymn/procframe/internal/gen/test/v1;testv1";
 
 message RepoScope {
   string org = 1;
@@ -42,14 +42,21 @@ message PRListResponse {
 // PRService demonstrates nested groups with bind_into.
 service PRService {
   option (procframe.options.v1.cli_group) = {
-    path: {segments: ["repo", "pr"]}
+    path: {
+      segments: [
+        "repo",
+        "pr"
+      ]
+    }
     bind_into: "pr"
     summary: "Pull request operations"
   };
 
   rpc List(PRListRequest) returns (PRListResponse) {
     option (procframe.options.v1.proc) = {
-      cli_path: {segments: ["list"]}
+      cli_path: {
+        segments: ["list"]
+      }
       summary: "List pull requests"
     };
   }

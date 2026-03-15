@@ -2,9 +2,9 @@ syntax = "proto3";
 
 package test.v1;
 
-option go_package = "github.com/shuymn/procframe/gen/test/v1;testv1";
-
 import "procframe/options/v1/options.proto";
+
+option go_package = "github.com/shuymn/procframe/internal/gen/test/v1;testv1";
 
 enum LogLevel {
   LOG_LEVEL_UNSPECIFIED = 0;

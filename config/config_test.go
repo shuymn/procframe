@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/shuymn/procframe/config"
-	testv1 "github.com/shuymn/procframe/gen/test/v1"
+	testv1 "github.com/shuymn/procframe/internal/gen/test/v1"
 )
 
 func TestParseBootstrapArgs(t *testing.T) {

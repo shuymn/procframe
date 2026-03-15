@@ -144,7 +144,7 @@ const file_test_v1_stream_test_proto_rawDesc = "" +
 	"\a\n" +
 	"\x05watch\"\vWatch ticks0\x01\x1a\x1d\x8a\xb2\x19\x19\n" +
 	"\x06\n" +
-	"\x04tick\x1a\x0fTick operationsB0Z.github.com/shuymn/procframe/gen/test/v1;testv1b\x06proto3"
+	"\x04tick\x1a\x0fTick operationsB9Z7github.com/shuymn/procframe/internal/gen/test/v1;testv1b\x06proto3"
 
 var (
 	file_test_v1_stream_test_proto_rawDescOnce sync.Once

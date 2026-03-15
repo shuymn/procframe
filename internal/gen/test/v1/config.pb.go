@@ -168,7 +168,7 @@ const file_test_v1_config_proto_rawDesc = "" +
 	"\bLogLevel\x12\x19\n" +
 	"\x15LOG_LEVEL_UNSPECIFIED\x10\x00\x12\x12\n" +
 	"\x0eLOG_LEVEL_INFO\x10\x01\x12\x13\n" +
-	"\x0fLOG_LEVEL_DEBUG\x10\x02B0Z.github.com/shuymn/procframe/gen/test/v1;testv1b\x06proto3"
+	"\x0fLOG_LEVEL_DEBUG\x10\x02B9Z7github.com/shuymn/procframe/internal/gen/test/v1;testv1b\x06proto3"
 
 var (
 	file_test_v1_config_proto_rawDescOnce sync.Once

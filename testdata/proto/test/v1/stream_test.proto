@@ -2,9 +2,9 @@ syntax = "proto3";
 
 package test.v1;
 
-option go_package = "github.com/shuymn/procframe/gen/test/v1;testv1";
-
 import "procframe/options/v1/options.proto";
+
+option go_package = "github.com/shuymn/procframe/internal/gen/test/v1;testv1";
 
 // TickRequest is the request for the Watch RPC.
 message TickRequest {
@@ -21,13 +21,17 @@ message TickResponse {
 // TickService demonstrates server-streaming.
 service TickService {
   option (procframe.options.v1.cli_group) = {
-    path: {segments: ["tick"]}
+    path: {
+      segments: ["tick"]
+    }
     summary: "Tick operations"
   };
 
   rpc Watch(TickRequest) returns (stream TickResponse) {
     option (procframe.options.v1.proc) = {
-      cli_path: {segments: ["watch"]}
+      cli_path: {
+        segments: ["watch"]
+      }
       summary: "Watch ticks"
     };
   }

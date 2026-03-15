@@ -28,7 +28,7 @@ const file_test_v1_import_test_proto_rawDesc = "" +
 	"\x19test/v1/import_test.proto\x12\atest.v1\x1a\"procframe/options/v1/options.proto2\x1b\n" +
 	"\vTestService\x1a\f\x8a\xb2\x19\b\n" +
 	"\x06\n" +
-	"\x04testB0Z.github.com/shuymn/procframe/gen/test/v1;testv1b\x06proto3"
+	"\x04testB9Z7github.com/shuymn/procframe/internal/gen/test/v1;testv1b\x06proto3"
 
 var file_test_v1_import_test_proto_goTypes = []any{}
 var file_test_v1_import_test_proto_depIdxs = []int32{

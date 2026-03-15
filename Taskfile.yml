@@ -159,7 +159,7 @@ tasks:
     summary: |
       Builds protoc-gen-procframe-go, then runs buf generate on testdata/proto/
       to produce handler interfaces and CLI runners for integration tests.
-      Output goes to gen/test/ and is gitignored.
+      Output goes to internal/gen/test/ and is gitignored.
     deps:
       - task: install:buf
         silent: true
