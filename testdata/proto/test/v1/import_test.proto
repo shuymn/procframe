@@ -2,10 +2,12 @@ syntax = "proto3";
 
 package test.v1;
 
+option go_package = "github.com/shuymn/procframe/gen/test/v1;testv1";
+
 import "procframe/options/v1/options.proto";
 
 service TestService {
   option (procframe.options.v1.cli_group) = {
-    path: {segments: "test"}
+    path: {segments: ["test"]}
   };
 }

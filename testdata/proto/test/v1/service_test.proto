@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package test.v1;
+
+option go_package = "github.com/shuymn/procframe/gen/test/v1;testv1";
+
+import "procframe/options/v1/options.proto";
+
+// EchoRequest is the request for the Echo RPC.
+message EchoRequest {
+  string message = 1;
+  int32 count = 2;
+  bool uppercase = 3;
+}
+
+// EchoResponse is the response for the Echo RPC.
+message EchoResponse {
+  string message = 1;
+  int32 count = 2;
+}
+
+// EchoService is a simple service for testing basic unary codegen.
+service EchoService {
+  option (procframe.options.v1.cli_group) = {
+    path: {segments: ["echo"]}
+    summary: "Echo operations"
+  };
+
+  rpc Echo(EchoRequest) returns (EchoResponse) {
+    option (procframe.options.v1.proc) = {
+      cli_path: {segments: ["run"]}
+      summary: "Echo a message"
+    };
+  }
+}

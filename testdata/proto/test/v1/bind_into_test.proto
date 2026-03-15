@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package test.v1;
+
+option go_package = "github.com/shuymn/procframe/gen/test/v1;testv1";
+
+import "procframe/options/v1/options.proto";
+
+message RepoScope {
+  string org = 1;
+}
+
+enum PRState {
+  PR_STATE_UNSPECIFIED = 0;
+  PR_STATE_OPEN = 1;
+  PR_STATE_CLOSED = 2;
+}
+
+message PRLabel {
+  string name = 1;
+}
+
+message PRScope {
+  PRState state = 1;
+  // The following fields exercise unsupported bind_into field types.
+  // They must be silently skipped in group flags (no flat flag generation)
+  // but still compile correctly.
+  repeated string labels = 2;
+  PRLabel primary_label = 3;
+}
+
+message PRListRequest {
+  RepoScope repo = 1;
+  PRScope pr = 2;
+  int32 limit = 3;
+}
+
+message PRListResponse {
+  repeated string items = 1;
+}
+
+// PRService demonstrates nested groups with bind_into.
+service PRService {
+  option (procframe.options.v1.cli_group) = {
+    path: {segments: ["repo", "pr"]}
+    bind_into: "pr"
+    summary: "Pull request operations"
+  };
+
+  rpc List(PRListRequest) returns (PRListResponse) {
+    option (procframe.options.v1.proc) = {
+      cli_path: {segments: ["list"]}
+      summary: "List pull requests"
+    };
+  }
+}
