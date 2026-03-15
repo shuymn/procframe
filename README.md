@@ -1,53 +1,75 @@
 # procframe
 
+A proto-driven typed runtime for CLI frameworks in Go.
 
-This repository was initialized from a Go project template.
+Define your config and procedures in Protocol Buffers, and `procframe` generates the CLI glue code. You write only the handler.
 
-Replace this README with project-specific documentation once the repository has a clear purpose, setup flow, and release process.
+## Overview
 
-## Local Setup
+`procframe` connects two concerns with minimal abstraction:
 
-Use `task` as the primary entrypoint for local development. After installing the required tools, enable Git hooks:
+1. **Config**: env / CLI / file → merge → immutable config
+2. **Procedure**: CLI → typed request → handler → typed response
+
+The runtime provides transport-independent abstractions (`Request[T]`, `Response[T]`, `ServerStream[T]`, structured errors). A protoc plugin (`protoc-gen-procframe-go`) generates CLI command trees, flag parsers, and config loaders from your proto definitions.
+
+### Key Features
+
+- **Proto as single source of truth** — config and procedure schemas defined in `.proto` files
+- **Code generation** — CLI command tree, flag parsing, config loading, handler interfaces
+- **Transport-independent handlers** — handlers know nothing about CLI, HTTP, or WebSocket
+- **Human + agent dual interface** — flat flags for humans, `--json` raw payload for agents
+- **Schema introspection** — `schema` subcommand for self-describing CLI
+- **Structured errors** — canonical error codes with exit code mapping and retryable hints
+- **stdout/stderr separation** — result data on stdout, logs/help/errors on stderr
+
+## Status
+
+v0.1 — CLI transport only. HTTP, gRPC, and WebSocket transports are planned but not yet implemented.
+
+Supported handler shapes: **unary** and **server-stream**.
+
+## Requirements
+
+- Go 1.25+
+- [Task](https://taskfile.dev/)
+- [buf](https://buf.build/) (for proto code generation)
+- [lefthook](https://github.com/evilmartians/lefthook) (for Git hooks)
+
+## Setup
 
 ```bash
 lefthook install
 ```
 
-Useful commands:
+## Development
 
 ```bash
-task
-task build
-task test
-task lint
-task fmt
-task check
+task          # list all available tasks
+task build    # build
+task test     # test with race detection
+task lint     # lint
+task fmt      # format
+task check    # lint + build + test
 ```
 
-## Initial Customization
+## Repository Layout
 
-Before treating this as a real project, update the repository-specific parts:
-
-1. Run template initialization from the repository root. This rewrites template placeholders, refreshes shared workflows, syncs Actions settings, deletes template-only files, and creates a local commit.
-
-```bash
-task -t .taskfiles/template.yml init
+```
+procframe/
+├── cmd/protoc-gen-procframe-go/  # protoc plugin
+├── internal/codegen/             # code generation logic
+├── proto/procframe/options/v1/   # options.proto (library-provided schema DSL)
+├── transport/cli/                # CLI transport runtime
+├── doc.go                        # package documentation
+├── request.go                    # Request[T]
+├── response.go                   # Response[T]
+├── stream.go                     # ServerStream[T]
+├── meta.go                       # Meta (procedure, request ID, session ID)
+├── errors.go                     # Structured error with canonical codes
+└── handler.go                    # UnaryHandler / ServerStreamHandler interfaces
 ```
 
-2. Replace [`main.go`](main.go) and any starter code with your actual application entrypoint and package layout.
-3. Rewrite this README with your project's purpose, setup, development workflow, and release information.
-4. Review [`AGENTS.md`](AGENTS.md) and [`docs/`](docs/) and keep only the rules and guidance you want in this repository.
-5. Run `task check` before your first project-specific commit.
+## License
 
-## Suggested README Sections
-
-When you rewrite this file, include only the sections your project actually needs, for example:
-
-- Project overview
-- Requirements
-- Setup
-- Local development commands
-- Testing
-- Deployment or release process
-- Repository layout
-- Links to deeper docs if needed
+[MIT](LICENSE)
