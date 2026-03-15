@@ -4,12 +4,14 @@ package testv1
 
 import (
 	context "context"
+	json "encoding/json"
 	flag "flag"
 	fmt "fmt"
 	procframe "github.com/shuymn/procframe"
 	cli "github.com/shuymn/procframe/transport/cli"
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
+	sort "sort"
 )
 
 // NewEchoServiceCLIRunner constructs a [cli.Runner]
@@ -19,21 +21,32 @@ func NewEchoServiceCLIRunner(h EchoServiceHandler, opts ...cli.Option) *cli.Runn
 		Segment: "run",
 		Summary: "Echo a message",
 		Run: func(ctx context.Context, args []string, stdout io.Writer) error {
-			fs := flag.NewFlagSet("run", flag.ContinueOnError)
-			fs.SetOutput(io.Discard)
-			var flag_message string
-			fs.StringVar(&flag_message, "message", "", "")
-			var flag_count int32
-			fs.Var(cli.NewInt32Value(&flag_count), "count", "")
-			var flag_uppercase bool
-			fs.BoolVar(&flag_uppercase, "uppercase", false, "")
-			if err := fs.Parse(args); err != nil {
-				return err
-			}
-			req := &EchoRequest{
-				Message:   flag_message,
-				Count:     flag_count,
-				Uppercase: flag_uppercase,
+			var req *EchoRequest
+			if jsonPayload, ok := cli.JSONPayloadFromContext(ctx); ok {
+				if len(args) > 0 {
+					return &procframe.Error{Code: procframe.CodeInvalidArgument, Message: "--json cannot be combined with flags"}
+				}
+				req = &EchoRequest{}
+				if err := protojson.Unmarshal([]byte(jsonPayload), req); err != nil {
+					return err
+				}
+			} else {
+				fs := flag.NewFlagSet("run", flag.ContinueOnError)
+				fs.SetOutput(io.Discard)
+				var flag_message string
+				fs.StringVar(&flag_message, "message", "", "")
+				var flag_count int32
+				fs.Var(cli.NewInt32Value(&flag_count), "count", "")
+				var flag_uppercase bool
+				fs.BoolVar(&flag_uppercase, "uppercase", false, "")
+				if err := fs.Parse(args); err != nil {
+					return err
+				}
+				req = &EchoRequest{
+					Message:   flag_message,
+					Count:     flag_count,
+					Uppercase: flag_uppercase,
+				}
 			}
 			resp, err := h.Echo(ctx, &procframe.Request[EchoRequest]{
 				Msg:  req,
@@ -42,7 +55,15 @@ func NewEchoServiceCLIRunner(h EchoServiceHandler, opts ...cli.Option) *cli.Runn
 			if err != nil {
 				return err
 			}
-			out, err := protojson.MarshalOptions{Multiline: true}.Marshal(resp.Msg)
+			if resp == nil || resp.Msg == nil {
+				return &procframe.Error{Code: procframe.CodeInternal, Message: "handler returned nil response"}
+			}
+			var out []byte
+			if cli.OutputFormatFromContext(ctx) == cli.OutputJSON {
+				out, err = protojson.MarshalOptions{}.Marshal(resp.Msg)
+			} else {
+				out, err = protojson.MarshalOptions{Multiline: true}.Marshal(resp.Msg)
+			}
 			if err != nil {
 				return err
 			}
@@ -60,6 +81,72 @@ func NewEchoServiceCLIRunner(h EchoServiceHandler, opts ...cli.Option) *cli.Runn
 	root := &cli.Node{
 		Children: map[string]*cli.Node{
 			"echo": node_echo,
+		},
+	}
+	root.Children["schema"] = &cli.Node{
+		Segment: "schema",
+		Summary: "Show procedure schemas",
+		Run: func(_ context.Context, args []string, stdout io.Writer) error {
+			schemas := map[string]cli.SchemaInfo{
+				"/test.v1.EchoService/Echo": {
+					Procedure: "/test.v1.EchoService/Echo",
+					Request: cli.SchemaMessage{
+						FullName: "test.v1.EchoRequest",
+						Fields: []cli.SchemaField{
+							{
+								Name: "message",
+								Type: "string",
+							},
+							{
+								Name: "count",
+								Type: "int32",
+							},
+							{
+								Name: "uppercase",
+								Type: "bool",
+							},
+						},
+					},
+					Response: cli.SchemaMessage{
+						FullName: "test.v1.EchoResponse",
+						Fields: []cli.SchemaField{
+							{
+								Name: "message",
+								Type: "string",
+							},
+							{
+								Name: "count",
+								Type: "int32",
+							},
+						},
+					},
+				},
+			}
+			if len(args) > 0 {
+				info, ok := schemas[args[0]]
+				if !ok {
+					return fmt.Errorf("unknown procedure %q", args[0])
+				}
+				out, err := json.MarshalIndent(info, "", "  ")
+				if err != nil {
+					return err
+				}
+				fmt.Fprintln(stdout, string(out))
+				return nil
+			}
+			all := make([]cli.SchemaInfo, 0, len(schemas))
+			for _, info := range schemas {
+				all = append(all, info)
+			}
+			sort.Slice(all, func(i, j int) bool {
+				return all[i].Procedure < all[j].Procedure
+			})
+			out, err := json.MarshalIndent(all, "", "  ")
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(stdout, string(out))
+			return nil
 		},
 	}
 	return cli.NewRunner(root, opts...)
