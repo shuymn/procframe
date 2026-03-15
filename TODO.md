@@ -12,10 +12,13 @@
     - repeated: 複数回指定 (`--tag foo --tag bar`)
     - nested message (non-bind_into): flat flag 生成なし、`--json` fallback のみ
 
+## Deferred Questions
+
 - Question: WS frame の正式 schema
   - Class: `risk-bearing`
   - Resolution: `decision`
-  - Status: `resolved`
+  - Status: `deferred`
+  - Reason: WS は v0.1 スコープ外
   - Decision: IDEA.md §17.1 ドラフト採用 + error frame に `retryable` 追加
     - inbound: `{"id":"...","procedure":"/pkg.Service/Method","payload":{...}}`
     - outbound success: `{"id":"...","payload":{...},"eos":true|false}`
@@ -94,20 +97,3 @@
   - Why not split vertically further?: config の merge chain (defaults → file → env → bootstrap → validate) は各層が密結合しており、部分提供では config システムとして成立しない
   - Escalate if: bootstrap CLI の argv 分離ロジックで procedure args との境界が曖昧になる場合 (e.g. `--config` と procedure flag の衝突)
 
-- [ ] Theme: WS transport
-  - Outcome: WebSocket 経由で unary/server-stream procedure を JSON text frame で呼び出せる
-  - Goal: WS codegen (NewXxxWSHandler 生成)、JSON text frame の decode/encode、canonical procedure 名による static dispatch、unary + server-stream 対応
-  - Must Not Break: Theme 1 の public API; handler interface の互換性 (CLI と同じ handler を WS でも使える)
-  - Non-goals: Discord Gateway, bidi/client stream, binary frames, connection management, authentication, reconnection, heartbeat
-  - Acceptance (EARS):
-    - When WS クライアントが `{"id":"...","procedure":"/pkg.Service/Method","payload":{...}}` を送信すると対応する handler が呼ばれる
-    - When unary handler が成功すると `{"id":"...","payload":{...},"eos":true}` の response frame が返る
-    - When server-stream handler が chunk を送信すると `eos=false` の frame が順次返り、最後に `eos=true` が返る
-    - When handler が Error を返すと `{"id":"...","error":{"code":"...","message":"...","retryable":false},"eos":true}` が返る
-    - When 存在しない procedure を指定すると error frame が返る
-    - When service root path (`/pkg.Service/`) を指定すると error frame が返る
-  - Evidence: `run=go test ./transport/ws/...; oracle=integration test pass; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
-  - Gates: `static`, `integration`
-  - Executable doc: テスト用 WS サーバー起動 → JSON frame 送信 → response frame 検証の integration test
-  - Why not split vertically further?: unary と server-stream は同一 dispatch ループ内で処理され frame codec を共有するため、分離のメリットがない
-  - Escalate if: WS frame の実装中に multiplexing やバックプレッシャーの設計不足が判明した場合
