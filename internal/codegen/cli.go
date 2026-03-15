@@ -8,14 +8,17 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
+var sortPkg = protogen.GoImportPath("sort")
+
 var (
-	contextPkg   = protogen.GoImportPath("context")
-	flagPkg      = protogen.GoImportPath("flag")
-	fmtPkg       = protogen.GoImportPath("fmt")
-	ioPkg        = protogen.GoImportPath("io")
-	protojsonPkg = protogen.GoImportPath("google.golang.org/protobuf/encoding/protojson")
-	procframePkg = protogen.GoImportPath("github.com/shuymn/procframe")
-	cliPkg       = protogen.GoImportPath("github.com/shuymn/procframe/transport/cli")
+	contextPkg      = protogen.GoImportPath("context")
+	encodingJSONPkg = protogen.GoImportPath("encoding/json")
+	flagPkg         = protogen.GoImportPath("flag")
+	fmtPkg          = protogen.GoImportPath("fmt")
+	ioPkg           = protogen.GoImportPath("io")
+	protojsonPkg    = protogen.GoImportPath("google.golang.org/protobuf/encoding/protojson")
+	procframePkg    = protogen.GoImportPath("github.com/shuymn/procframe")
+	cliPkg          = protogen.GoImportPath("github.com/shuymn/procframe/transport/cli")
 )
 
 // generateCLI writes the *.cli.proc.go file for a service.
@@ -72,6 +75,10 @@ func generateCLI(
 	}
 
 	rootVar := decls[len(decls)-1].varName
+
+	// Add schema subcommand to root
+	emitSchemaNode(g, svc, svcInfo, rootVar)
+
 	g.P("\treturn ", cliPkg.Ident("NewRunner"), "(", rootVar, ", opts...)")
 	g.P("}")
 }
@@ -183,14 +190,6 @@ func emitLeafDecl(g *protogen.GeneratedFile, d nodeDecl, svc *protogen.Service, 
 		g.P("\t\tHidden: true,")
 	}
 
-	if leaf.IsStreaming {
-		g.P("\t\tRun: func(_ ", contextPkg.Ident("Context"), ", _ []string, _ ", ioPkg.Ident("Writer"), ") error {")
-		g.P("\t\t\treturn ", fmtPkg.Ident("Errorf"), "(\"server-stream commands are not yet supported\")")
-		g.P("\t\t},")
-		g.P("\t}")
-		return
-	}
-
 	method := findMethod(svc, leaf.MethodGoName)
 	if method == nil {
 		g.P("\t}")
@@ -204,8 +203,47 @@ func emitLeafDecl(g *protogen.GeneratedFile, d nodeDecl, svc *protogen.Service, 
 		ioPkg.Ident("Writer"),
 		") error {",
 	)
+
+	// --json / flag parsing branching
+	emitRequestParsing(g, d, method, bindCtxs)
+
+	if leaf.IsStreaming {
+		emitStreamingHandlerCall(g, method, leaf)
+	} else {
+		emitHandlerCall(g, method, leaf)
+	}
+
+	g.P("\t\t},")
+	g.P("\t}")
+}
+
+// emitRequestParsing emits the --json / flag parsing branching.
+func emitRequestParsing(
+	g *protogen.GeneratedFile,
+	d nodeDecl,
+	method *protogen.Method,
+	bindCtxs []bindIntoCtx,
+) {
+	g.P("\t\t\tvar req *", method.Input.GoIdent)
+	g.P("\t\t\tif jsonPayload, ok := ", cliPkg.Ident("JSONPayloadFromContext"), "(ctx); ok {")
+	g.P("\t\t\t\tif len(args) > 0 {")
 	g.P(
-		"\t\t\tfs := ",
+		"\t\t\t\t\treturn &",
+		procframePkg.Ident("Error"),
+		`{Code: `,
+		procframePkg.Ident("CodeInvalidArgument"),
+		`, Message: "--json cannot be combined with flags"}`,
+	)
+	g.P("\t\t\t\t}")
+	g.P("\t\t\t\treq = &", method.Input.GoIdent, "{}")
+	g.P("\t\t\t\tif err := ", protojsonPkg.Ident("Unmarshal"), "([]byte(jsonPayload), req); err != nil {")
+	g.P("\t\t\t\t\treturn err")
+	g.P("\t\t\t\t}")
+	g.P("\t\t\t} else {")
+
+	// Flag parsing branch
+	g.P(
+		"\t\t\t\tfs := ",
 		flagPkg.Ident("NewFlagSet"),
 		"(",
 		fmt.Sprintf("%q", d.node.Segment),
@@ -213,25 +251,18 @@ func emitLeafDecl(g *protogen.GeneratedFile, d nodeDecl, svc *protogen.Service, 
 		flagPkg.Ident("ContinueOnError"),
 		")",
 	)
-	g.P("\t\t\tfs.SetOutput(", ioPkg.Ident("Discard"), ")")
-
-	emitFlagVars(g, method.Input, "\t\t\t")
-
-	g.P("\t\t\tif err := fs.Parse(args); err != nil {")
-	g.P("\t\t\t\treturn err")
+	g.P("\t\t\t\tfs.SetOutput(", ioPkg.Ident("Discard"), ")")
+	emitFlagVars(g, method.Input, "\t\t\t\t")
+	g.P("\t\t\t\tif err := fs.Parse(args); err != nil {")
+	g.P("\t\t\t\t\treturn err")
+	g.P("\t\t\t\t}")
+	g.P("\t\t\t\treq = &", method.Input.GoIdent, "{")
+	emitRequestFields(g, method.Input, "\t\t\t\t\t", bindCtxs)
+	g.P("\t\t\t\t}")
 	g.P("\t\t\t}")
-
-	g.P("\t\t\treq := &", method.Input.GoIdent, "{")
-	emitRequestFields(g, method.Input, "\t\t\t\t", bindCtxs)
-	g.P("\t\t\t}")
-
-	emitHandlerCall(g, method, leaf)
-
-	g.P("\t\t},")
-	g.P("\t}")
 }
 
-// emitHandlerCall emits the handler invocation and JSON output code
+// emitHandlerCall emits the unary handler invocation and JSON output code
 // within a leaf command's Run function.
 func emitHandlerCall(g *protogen.GeneratedFile, method *protogen.Method, leaf *leafInfo) {
 	g.P(
@@ -249,13 +280,77 @@ func emitHandlerCall(g *protogen.GeneratedFile, method *protogen.Method, leaf *l
 	g.P("\t\t\tif err != nil {")
 	g.P("\t\t\t\treturn err")
 	g.P("\t\t\t}")
+	g.P("\t\t\tif resp == nil || resp.Msg == nil {")
+	g.P(
+		"\t\t\t\treturn &",
+		procframePkg.Ident("Error"),
+		"{Code: ",
+		procframePkg.Ident("CodeInternal"),
+		`, Message: "handler returned nil response"}`,
+	)
+	g.P("\t\t\t}")
 
-	g.P("\t\t\tout, err := ", protojsonPkg.Ident("MarshalOptions"), "{Multiline: true}.Marshal(resp.Msg)")
+	// --output json: compact JSON; default: multiline JSON
+	g.P("\t\t\tvar out []byte")
+	g.P("\t\t\tif ", cliPkg.Ident("OutputFormatFromContext"), "(ctx) == ", cliPkg.Ident("OutputJSON"), " {")
+	g.P("\t\t\t\tout, err = ", protojsonPkg.Ident("MarshalOptions"), "{}.Marshal(resp.Msg)")
+	g.P("\t\t\t} else {")
+	g.P("\t\t\t\tout, err = ", protojsonPkg.Ident("MarshalOptions"), "{Multiline: true}.Marshal(resp.Msg)")
+	g.P("\t\t\t}")
 	g.P("\t\t\tif err != nil {")
 	g.P("\t\t\t\treturn err")
 	g.P("\t\t\t}")
 	g.P("\t\t\t", fmtPkg.Ident("Fprintln"), "(stdout, string(out))")
 	g.P("\t\t\treturn nil")
+}
+
+// emitStreamingHandlerCall emits the server-streaming handler invocation.
+func emitStreamingHandlerCall(g *protogen.GeneratedFile, method *protogen.Method, leaf *leafInfo) {
+	// Build write callback
+	g.P(
+		"\t\t\tstream := ",
+		cliPkg.Ident("NewStreamWriter"),
+		"[", method.Output.GoIdent, "](",
+		"ctx, func(resp *",
+		procframePkg.Ident("Response"),
+		"[", method.Output.GoIdent, "]) error {",
+	)
+	g.P("\t\t\t\tif resp == nil || resp.Msg == nil {")
+	g.P(
+		"\t\t\t\t\treturn &",
+		procframePkg.Ident("Error"),
+		"{Code: ",
+		procframePkg.Ident("CodeInternal"),
+		`, Message: "handler sent nil response"}`,
+	)
+	g.P("\t\t\t\t}")
+	g.P("\t\t\t\tvar out []byte")
+	g.P("\t\t\t\tvar err error")
+	g.P("\t\t\t\tif ", cliPkg.Ident("OutputFormatFromContext"), "(ctx) == ", cliPkg.Ident("OutputJSON"), " {")
+	g.P("\t\t\t\t\tout, err = ", protojsonPkg.Ident("MarshalOptions"), "{}.Marshal(resp.Msg)")
+	g.P("\t\t\t\t} else {")
+	g.P("\t\t\t\t\tout, err = ", protojsonPkg.Ident("MarshalOptions"), "{Multiline: true}.Marshal(resp.Msg)")
+	g.P("\t\t\t\t}")
+	g.P("\t\t\t\tif err != nil {")
+	g.P("\t\t\t\t\treturn err")
+	g.P("\t\t\t\t}")
+	g.P("\t\t\t\t", fmtPkg.Ident("Fprintln"), "(stdout, string(out))")
+	g.P("\t\t\t\treturn nil")
+	g.P("\t\t\t})")
+
+	// Invoke streaming handler
+	g.P(
+		"\t\t\treturn h.",
+		method.GoName,
+		"(ctx, &",
+		procframePkg.Ident("Request"),
+		"[",
+		method.Input.GoIdent,
+		"]{",
+	)
+	g.P("\t\t\t\tMsg:  req,")
+	g.P("\t\t\t\tMeta: ", procframePkg.Ident("Meta"), "{Procedure: ", fmt.Sprintf("%q", leaf.FullName), "},")
+	g.P("\t\t\t}, stream)")
 }
 
 func emitFlagVars(g *protogen.GeneratedFile, msg *protogen.Message, indent string) {
@@ -553,4 +648,185 @@ func emitBindIntoFieldConstruction(g *protogen.GeneratedFile, bc *bindIntoCtx, i
 		}
 	}
 	g.P(indent, "},")
+}
+
+// emitSchemaNode generates the "schema" subcommand leaf that prints
+// procedure type information as JSON.
+func emitSchemaNode(
+	g *protogen.GeneratedFile,
+	svc *protogen.Service,
+	svcInfo *serviceInfo,
+	rootVar string,
+) {
+	g.P("\t", rootVar, `.Children["schema"] = &`, cliPkg.Ident("Node"), "{")
+	g.P("\t\tSegment: \"schema\",")
+	g.P("\t\tSummary: \"Show procedure schemas\",")
+	g.P(
+		"\t\tRun: func(_ ",
+		contextPkg.Ident("Context"),
+		", args []string, stdout ",
+		ioPkg.Ident("Writer"),
+		") error {",
+	)
+
+	emitSchemaMap(g, svc, svcInfo)
+	emitSchemaLookup(g)
+
+	g.P("\t\t},")
+	g.P("\t}")
+}
+
+// emitSchemaMap emits the static schema map within the schema command.
+func emitSchemaMap(
+	g *protogen.GeneratedFile,
+	svc *protogen.Service,
+	svcInfo *serviceInfo,
+) {
+	g.P("\t\t\tschemas := map[string]", cliPkg.Ident("SchemaInfo"), "{")
+	for _, mi := range svcInfo.Methods {
+		if !mi.CLI {
+			continue
+		}
+		method := findMethod(svc, mi.GoName)
+		if method == nil {
+			continue
+		}
+		g.P("\t\t\t\t", fmt.Sprintf("%q", mi.FullName), ": {")
+		g.P("\t\t\t\t\tProcedure: ", fmt.Sprintf("%q", mi.FullName), ",")
+		emitSchemaMessage(g, method.Input, "Request", "\t\t\t\t\t")
+		emitSchemaMessage(g, method.Output, "Response", "\t\t\t\t\t")
+		if mi.IsStreaming {
+			g.P("\t\t\t\t\tStreaming: true,")
+		}
+		g.P("\t\t\t\t},")
+	}
+	g.P("\t\t\t}")
+}
+
+// emitSchemaLookup emits the lookup/output logic for the schema command.
+func emitSchemaLookup(g *protogen.GeneratedFile) {
+	g.P("\t\t\tif len(args) > 0 {")
+	g.P("\t\t\t\tinfo, ok := schemas[args[0]]")
+	g.P("\t\t\t\tif !ok {")
+	g.P(
+		"\t\t\t\t\treturn ",
+		fmtPkg.Ident("Errorf"),
+		`("unknown procedure %q", args[0])`,
+	)
+	g.P("\t\t\t\t}")
+	g.P(
+		"\t\t\t\tout, err := ",
+		encodingJSONPkg.Ident("MarshalIndent"),
+		`(info, "", "  ")`,
+	)
+	g.P("\t\t\t\tif err != nil {")
+	g.P("\t\t\t\t\treturn err")
+	g.P("\t\t\t\t}")
+	g.P("\t\t\t\t", fmtPkg.Ident("Fprintln"), "(stdout, string(out))")
+	g.P("\t\t\t\treturn nil")
+	g.P("\t\t\t}")
+
+	g.P("\t\t\tall := make([]", cliPkg.Ident("SchemaInfo"), ", 0, len(schemas))")
+	g.P("\t\t\tfor _, info := range schemas {")
+	g.P("\t\t\t\tall = append(all, info)")
+	g.P("\t\t\t}")
+	g.P("\t\t\t", sortPkg.Ident("Slice"), "(all, func(i, j int) bool {")
+	g.P("\t\t\t\treturn all[i].Procedure < all[j].Procedure")
+	g.P("\t\t\t})")
+	g.P(
+		"\t\t\tout, err := ",
+		encodingJSONPkg.Ident("MarshalIndent"),
+		`(all, "", "  ")`,
+	)
+	g.P("\t\t\tif err != nil {")
+	g.P("\t\t\t\treturn err")
+	g.P("\t\t\t}")
+	g.P("\t\t\t", fmtPkg.Ident("Fprintln"), "(stdout, string(out))")
+	g.P("\t\t\treturn nil")
+}
+
+// emitSchemaMessage emits a SchemaMessage literal for the given message type.
+func emitSchemaMessage(
+	g *protogen.GeneratedFile,
+	msg *protogen.Message,
+	fieldName, indent string,
+) {
+	fullName := string(msg.Desc.FullName())
+	g.P(indent, fieldName, ": ", cliPkg.Ident("SchemaMessage"), "{")
+	g.P(indent, "\tFullName: ", fmt.Sprintf("%q", fullName), ",")
+	g.P(indent, "\tFields: []", cliPkg.Ident("SchemaField"), "{")
+	for _, field := range msg.Fields {
+		g.P(indent, "\t\t{")
+		g.P(indent, "\t\t\tName: ", fmt.Sprintf("%q", string(field.Desc.Name())), ",")
+		g.P(indent, "\t\t\tType: ", fmt.Sprintf("%q", schemaFieldType(field)), ",")
+		if field.Desc.IsList() {
+			g.P(indent, "\t\t\tRepeated: true,")
+		}
+		if field.Desc.Kind() == protoreflect.EnumKind {
+			values := enumCLIValuesForSchema(field.Enum)
+			if len(values) > 0 {
+				g.P(indent, "\t\t\tEnumValues: []string{")
+				for _, v := range values {
+					g.P(indent, "\t\t\t\t", fmt.Sprintf("%q", v), ",")
+				}
+				g.P(indent, "\t\t\t},")
+			}
+		}
+		g.P(indent, "\t\t},")
+	}
+	g.P(indent, "\t},")
+	g.P(indent, "},")
+}
+
+// schemaFieldType returns the type string for a schema field.
+func schemaFieldType(field *protogen.Field) string {
+	switch field.Desc.Kind() {
+	case protoreflect.StringKind:
+		return "string"
+	case protoreflect.BoolKind:
+		return "bool"
+	case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
+		return "int32"
+	case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
+		return "int64"
+	case protoreflect.Uint32Kind, protoreflect.Fixed32Kind:
+		return "uint32"
+	case protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
+		return "uint64"
+	case protoreflect.FloatKind:
+		return "float"
+	case protoreflect.DoubleKind:
+		return "double"
+	case protoreflect.EnumKind:
+		return "enum"
+	case protoreflect.MessageKind:
+		return "message"
+	case protoreflect.BytesKind:
+		return "bytes"
+	case protoreflect.GroupKind:
+		return "group"
+	default:
+		return "unknown"
+	}
+}
+
+// enumCLIValuesForSchema returns the CLI value names for an enum type,
+// excluding the UNSPECIFIED (0) value.
+func enumCLIValuesForSchema(enumType *protogen.Enum) []string {
+	values := make([]enumValueInfo, 0, len(enumType.Values))
+	for _, v := range enumType.Values {
+		values = append(values, enumValueInfo{
+			ProtoName: string(v.Desc.Name()),
+			Number:    int32(v.Desc.Number()),
+		})
+	}
+	mappings, err := enumCLIValues(string(enumType.Desc.Name()), values)
+	if err != nil {
+		return nil
+	}
+	result := make([]string, 0, len(mappings))
+	for _, m := range mappings {
+		result = append(result, m.CLIValue)
+	}
+	return result
 }
