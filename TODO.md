@@ -42,7 +42,7 @@
   - Why not split vertically further?: Runtime types と options.proto は相互に意味を持ち、片方だけでは外部から観測可能な前進にならない
   - Escalate if: proto2 extension の `retention = RETENTION_SOURCE` が protoc バージョン依存で動かない場合
 
-- [ ] Theme: Codegen + CLI unary end-to-end
+- [x] Theme: Codegen + CLI unary end-to-end
   - Outcome: ユーザーが service proto を書き、protoc-gen-procframe-go を実行し、handler を実装し、CLI unary コマンドを flat flags で実行できる
   - Goal: protoc-gen-procframe-go による handler interface + CLI runner 生成、CLI unary 実行の end-to-end 動作
   - Must Not Break: Theme 1 の public API (Request, Response, ServerStream, Meta, Error, Code)
@@ -54,7 +54,7 @@
     - When group flags (bind_into) を指定すると対応する request field に値が注入される
     - When enum field の strip 後の値が衝突する proto を codegen すると error になる
     - When help を表示すると stderr に出力される
-  - Evidence: `run=go test ./cmd/protoc-gen-procframe-go/... && go test ./transport/cli/...; oracle=integration test pass; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
+  - Evidence: `run=go test ./internal/codegen/... && go test ./transport/cli/...; oracle=integration test pass; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
   - Gates: `static`, `integration`
   - Executable doc: fixture proto → protoc-gen-procframe-go → compile → CLI 実行 → 期待出力検証の integration test
   - Why not split vertically further?: handler interface 生成だけでは transport なしに動作確認できず、外部から観測可能な前進にならない。codegen と CLI transport は最初の vertical slice として不可分
