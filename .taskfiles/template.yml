@@ -1,0 +1,69 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: "3"
+
+tasks:
+  init:
+    desc: Initialize repository from template by replacing placeholder names
+    dir: "{{.TASKFILE_DIR}}/.."
+    summary: |
+      One-shot initialization: replaces the go-template module path and binary
+      name with values derived from MODULE across all tracked files, and
+      removes template-specific documentation sections.
+      Also refreshes shared GitHub workflow references and syncs Actions settings.
+      Deletes template-only files and creates a local initialization commit.
+      MODULE defaults to the module path derived from the git remote origin URL.
+      Usage: task -t .taskfiles/template.yml init [MODULE=github.com/owner/myapp]
+    preconditions:
+      - sh: git config user.name >/dev/null 2>&1
+        msg: "git user.name is not configured."
+      - sh: git config user.email >/dev/null 2>&1
+        msg: "git user.email is not configured."
+    vars:
+      OLD_MODULE: github.com/shuymn/go-template
+      OLD_BINARY: go-template
+      GITHUB_ACTIONS_SETUP_REF:
+        sh: |
+          refs="$(
+            find .github/workflows -type f -name '*.yml' -exec \
+              perl -ne 'print "$1\n" if m{uses:\s+shuymn/github-actions/\.github/workflows/[^@]+@([0-9a-f]{40})}' {} + 2>/dev/null \
+              | sort -u
+          )"
+
+          count="$(printf '%s\n' "$refs" | sed '/^$/d' | wc -l | tr -d ' ')"
+          if [ "$count" = "1" ]; then
+            printf '%s' "$refs"
+            exit 0
+          fi
+
+          if [ "$count" = "0" ]; then
+            echo "failed to detect shuymn/github-actions workflow ref" >&2
+            exit 1
+          fi
+
+          echo "multiple shuymn/github-actions workflow refs found:" >&2
+          printf '%s\n' "$refs" >&2
+          exit 1
+      GITHUB_ACTIONS_SETUP_URL: https://raw.githubusercontent.com/shuymn/github-actions/{{.GITHUB_ACTIONS_SETUP_REF}}/setup.sh
+      MODULE:
+        sh: |
+          if [ -n "{{.MODULE}}" ]; then
+            printf '%s' '{{.MODULE}}'
+          else
+            git remote get-url origin 2>/dev/null \
+              | sed 's|\.git$||; s|^https://||; s|^git@\([^:]*\):\(.*\)$|\1/\2|'
+          fi
+      NEW_BINARY:
+        sh: printf '%s' '{{.MODULE}}' | awk -F/ '{print $NF}'
+      ESCAPED_MODULE:
+        sh: printf '%s' '{{.MODULE}}' | sed 's/\./\\./g'
+    cmds:
+      - perl -i -pe 's|\Q{{.OLD_MODULE}}\E|{{.MODULE}}|g' go.mod .golangci.yaml
+      - perl -i -pe 's|\Qgithub\.com/shuymn/go-template\E|{{.ESCAPED_MODULE}}|g' .golangci.yaml
+      - perl -i -pe 's|\Q{{.OLD_BINARY}}\E|{{.NEW_BINARY}}|g' Taskfile.yml .gitignore .github/workflows/ci.yml
+      - perl -i -pe 's|^# \Q{{.OLD_BINARY}}\E$|# {{.NEW_BINARY}}|' README.md
+      - perl -i -0pe 's/\n<!-- template:start -->.*?<!-- template:end -->\n/\n/s' README.md
+      - curl -fsSL "{{.GITHUB_ACTIONS_SETUP_URL}}" | bash -s -- --overwrite-workflows
+      - rm -rf .taskfiles
+      - |
+        git add -A -- .github/workflows .gitignore .golangci.yaml README.md Taskfile.yml go.mod .taskfiles
+        git diff --staged --quiet || git commit -m "chore: initialize from template"

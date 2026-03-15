@@ -1,0 +1,202 @@
+# yaml-language-server: $schema=https://taskfile.dev/schema.json
+version: "3"
+
+env:
+  GOMODCACHE: "{{.ROOT_DIR}}/.cache/go-mod"
+  GOCACHE: "{{.ROOT_DIR}}/.cache/go-build"
+  GOLANGCI_LINT_CACHE: "{{.ROOT_DIR}}/.cache/golangci-lint"
+
+vars:
+  BINARY_NAME: go-template
+  BIN_DIR: bin
+  BINARY_PATH: "{{.BIN_DIR}}/{{.BINARY_NAME}}"
+  COVERAGE_FILE: coverage.out
+  GOLANGCI_LINT_VERSION: v2.11.2
+  GITLEAKS_BIN: gitleaks
+
+tasks:
+  default:
+    desc: Show available tasks
+    summary: |
+      Lists public tasks.
+      For machine-readable discovery, use: task --list --json
+    cmds:
+      - task --list
+
+  build:
+    desc: Build the main binary
+    summary: |
+      Builds the default entrypoint and writes the binary artifact.
+      This task mutates the workspace by creating/updating {{.BINARY_PATH}}.
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - go build -o {{.BINARY_PATH}} .
+      - test -f {{.BINARY_PATH}}
+      - test -x {{.BINARY_PATH}}
+
+  build:check:
+    desc: Compile-check all packages
+    summary: |
+      Verifies that all packages compile.
+      Intended for hooks / CI.
+    cmds:
+      - go build -o /dev/null ./...
+
+  clean:
+    desc: Remove build artifacts and coverage files
+    summary: |
+      Deletes local build artifacts and coverage output.
+      Safe to run at any time.
+    cmds:
+      - rm -f {{.BINARY_PATH}}
+      - rm -f {{.COVERAGE_FILE}}
+      - go clean
+
+  run:
+    desc: Build and run the main binary
+    summary: |
+      Builds the default entrypoint and then executes it.
+      Intended for local manual use.
+    deps: [build]
+    cmds:
+      - ./{{.BINARY_PATH}}
+
+  test:
+    desc: Run tests with race detection and shuffle
+    summary: |
+      Executes the full Go test suite with race detection enabled.
+      Uses shuffle=on and count=10 for stronger signal during local verification.
+    cmds:
+      - go test -race -shuffle=on -count=10 ./...
+
+  test:coverage:
+    desc: Run tests with coverage output
+    summary: |
+      Generates {{.COVERAGE_FILE}} and then runs octocov ls-files.
+      Requires octocov to be installed.
+    preconditions:
+      - sh: command -v octocov >/dev/null 2>&1
+        msg: "octocov is not installed. Please install it first."
+    cmds:
+      - go test -race -coverprofile={{.COVERAGE_FILE}} ./...
+      - octocov ls-files
+
+  install:lefthook:
+    internal: true
+    desc: Install lefthook git hooks if needed
+    summary: |
+      Ensures lefthook git hooks are installed.
+      Requires lefthook to be installed and available on PATH.
+    preconditions:
+      - sh: command -v lefthook >/dev/null 2>&1
+        msg: "lefthook is not installed. Please install it first."
+    status:
+      - test -f .git/hooks/pre-commit
+      - grep -q lefthook .git/hooks/pre-commit
+    cmds:
+      - lefthook install
+
+  install:golangci-lint:
+    internal: true
+    desc: Install golangci-lint if needed
+    summary: |
+      Internal helper that installs a pinned golangci-lint version into {{.BIN_DIR}}.
+      Not intended to be called directly.
+    vars:
+      CURRENT_VERSION:
+        sh: '{{.BIN_DIR}}/golangci-lint version 2>/dev/null | grep -oE "[0-9]+\.[0-9]+\.[0-9]+" | sed -n "1p" || echo ""'
+    status:
+      - test -f {{.BIN_DIR}}/golangci-lint
+      - test "v{{.CURRENT_VERSION}}" = "{{.GOLANGCI_LINT_VERSION}}"
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b {{.BIN_DIR}} {{.GOLANGCI_LINT_VERSION}}
+
+  lint:
+    desc: Run golangci-lint
+    summary: |
+      Runs repository-wide lint checks.
+      Read-only task.
+    deps:
+      - task: install:golangci-lint
+        silent: true
+    cmds:
+      - cmd: "{{.BIN_DIR}}/golangci-lint version"
+        silent: true
+      - "{{.BIN_DIR}}/golangci-lint run"
+
+  fmt:check:
+    desc: Check formatting without modifying files
+    summary: |
+      Runs golangci-lint fmt in diff/check mode.
+      Accepts optional explicit paths after `--`.
+      Example: task fmt:check -- internal/foo/a.go cmd/app/main.go
+    deps:
+      - task: install:golangci-lint
+        silent: true
+    cmds:
+      - cmd: "{{.BIN_DIR}}/golangci-lint version"
+        silent: true
+      - "{{.BIN_DIR}}/golangci-lint fmt --diff {{range .CLI_ARGS_LIST}}{{shellQuote .}} {{end}}"
+
+  fmt:fix:
+    aliases: [fmt]
+    desc: Format code
+    summary: |
+      Formats Go files using golangci-lint formatters.
+      Accepts optional explicit paths after `--`.
+      Example: task fmt:fix -- internal/foo/a.go cmd/app/main.go
+    deps:
+      - task: install:golangci-lint
+        silent: true
+    cmds:
+      - cmd: "{{.BIN_DIR}}/golangci-lint version"
+        silent: true
+      - "{{.BIN_DIR}}/golangci-lint fmt {{range .CLI_ARGS_LIST}}{{shellQuote .}} {{end}}"
+
+  secrets:staged:
+    desc: Scan staged changes for secrets
+    summary: |
+      Runs gitleaks against staged changes in pre-commit mode.
+      Requires gitleaks to be installed and available on PATH.
+    preconditions:
+      - sh: command -v {{.GITLEAKS_BIN}} >/dev/null 2>&1
+        msg: "gitleaks is not installed. Please install it first."
+    cmds:
+      - "{{.GITLEAKS_BIN}} git --pre-commit --staged --redact --no-banner --verbose"
+
+  tidy:
+    desc: Normalize and verify Go module state
+    summary: |
+      Runs go mod tidy and go mod verify.
+      This task may modify go.mod and go.sum.
+    cmds:
+      - go mod tidy -v
+      - go mod verify
+
+  check:fast:
+    desc: Run fast local verification
+    summary: |
+      Runs repository-wide lint and compile checks.
+      Intended for fast local feedback before heavier validation.
+    deps:
+      - task: install:lefthook
+        silent: true
+    cmds:
+      - task: lint
+      - task: build:check
+
+  check:full:
+    aliases: [check]
+    desc: Run full verification
+    summary: |
+      Runs lint, compile checks, tests, and module hygiene checks.
+      Intended for pre-push or CI-equivalent local validation.
+    deps:
+      - task: install:lefthook
+        silent: true
+    cmds:
+      - task: lint
+      - task: build:check
+      - task: test
+      - task: tidy

@@ -1,0 +1,20 @@
+# Binary
+/go-template
+
+# Test coverage
+/coverage.out
+
+# OS
+.DS_Store
+
+# Task runner cache
+/.task/
+
+# Local binaries (golangci-lint etc.)
+/bin/
+
+# Go cache (local for LLM access)
+/.cache/
+
+# env files
+.env

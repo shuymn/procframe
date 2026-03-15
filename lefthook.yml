@@ -1,0 +1,50 @@
+assert_lefthook_installed: true
+glob_matcher: doublestar
+no_tty: true
+skip_lfs: true
+
+output:
+  - summary
+  - failure
+  - execution
+  - execution_out
+
+pre-commit:
+  piped: true
+
+  commands:
+    fmt:
+      tags: [format]
+      glob: "**/*.go"
+      run: task fmt:fix -- {staged_files}
+      stage_fixed: true
+
+    lint:
+      tags: [lint]
+      glob: "**/*.go"
+      run: task lint
+
+    tidy:
+      tags: [deps]
+      glob: "go.mod,go.sum"
+      run: task tidy
+
+    build:
+      tags: [build]
+      glob: "**/*.go"
+      run: task build:check
+
+    gitleaks:
+      tags: [security]
+      run: task secrets:staged
+
+  skip:
+    - merge: true
+    - rebase: true
+
+pre-push:
+  piped: true
+  commands:
+    checks:
+      tags: [build, test, deps]
+      run: task check:full

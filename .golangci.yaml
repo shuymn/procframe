@@ -1,0 +1,196 @@
+version: "2"
+
+run:
+  timeout: 5m
+  relative-path-mode: gomod
+  modules-download-mode: readonly
+
+linters:
+  default: standard
+
+  enable:
+    # Extra linters here should either enforce a repo policy or catch bugs that
+    # the default set tends to miss in day-to-day Go changes.
+    - bodyclose
+    - containedctx
+    - contextcheck
+    - copyloopvar
+    - depguard
+    - errname
+    - errorlint
+    - exhaustive
+    - exhaustruct
+    - fatcontext
+    - forbidigo
+    - funlen
+    - gocritic
+    - gosec
+    - gocognit
+    - gomoddirectives
+    - intrange
+    - misspell
+    - nilerr
+    - noctx
+    - nolintlint
+    - predeclared
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - testifylint
+    - unconvert
+    - usestdlibvars
+    - wastedassign
+
+  settings:
+    depguard:
+      rules:
+        main:
+          deny:
+            # Keep the dependency surface on stdlib-first primitives unless there
+            # is a strong project-specific reason to opt out.
+            - pkg: github.com/pkg/errors
+              desc: use standard errors package
+            - pkg: golang.org/x/net/context
+              desc: use standard library context
+            # Project-specific examples:
+            # - pkg: github.com/shuymn/go-template/internal/infra
+            #   desc: use ports/interfaces instead of importing infra directly
+
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+
+    exhaustive:
+      check:
+        - switch
+        - map
+      # Package-scope enums are where silent drift is most expensive; local enums
+      # are usually easier to audit in-place during review.
+      package-scope-only: true
+
+    exhaustruct:
+      # Treat config/data boundary structs as explicit contracts so field drift is
+      # visible in diffs instead of being masked by zero values.
+      include:
+        - 'github\.com/shuymn/go-template/.+\.(Config|Options|Params|Query|Event)$'
+      exclude:
+        # Common stdlib/framework structs are intentionally exempt because they
+        # are large, evolve outside this repo, and are rarely initialized exhaustively.
+        - '.*/http\.Request'
+        - '.*/http\.Response'
+        - '.*/http\.Client'
+        - '.*/tls\.Config'
+        # kong structs are framework-managed and not exhaustively initialized.
+        - 'github\.com/alecthomas/kong\..+'
+      allow-empty-returns: true
+      allow-empty-declarations: true
+
+    fatcontext:
+      # Catch contexts retained in heap objects or long-lived structs where
+      # cancellation ownership becomes ambiguous.
+      check-struct-pointers: true
+
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: ^print(ln)?$
+        - pattern: ^fmt\.Print.*$
+          msg: avoid commit-time print debugging
+        - pattern: ^panic$
+          msg: return errors instead of panicking outside process boundary code
+        # Require callers to own context roots explicitly instead of hiding them
+        # inside lower-level application code.
+        - pattern: ^context\.(Background|TODO)$
+          msg: pass inherited context from caller or inject one explicitly
+        # Make time and network dependencies injectable so tests and review can
+        # reason about behavior deterministically.
+        - pattern: ^time\.Now$
+          msg: inject a clock or time source instead of calling time.Now directly
+        - pattern: ^http\.(Get|Post|PostForm|Head)$
+          msg: build a request with context and use an explicit http.Client
+
+    funlen:
+      # Keep the threshold high enough for table-driven tests and command wiring,
+      # but low enough that branching logic still gets pushed into helpers.
+      lines: 80
+      statements: 40
+
+    gocognit:
+      # Nudge complex branching into smaller units before review quality drops.
+      min-complexity: 15
+
+    gomoddirectives:
+      check-module-path: true
+      # Uncomment if you want to ban local replace directives:
+      # replace-local: true
+
+    govet:
+      enable:
+        - shadow
+
+    nolintlint:
+      # Force every suppression to explain intent so review can distinguish
+      # deliberate exceptions from lint avoidance.
+      require-explanation: true
+      require-specific: true
+
+  exclusions:
+    warn-unused: true
+    presets:
+      - comments
+      - std-error-handling
+      - common-false-positives
+      - legacy
+    rules:
+      - path: _test\.go
+        linters:
+          # Tests optimize for readability and focused fixtures over exhaustive
+          # production-style construction and context plumbing.
+          - exhaustruct
+          - funlen
+          - gocognit
+          - noctx
+          - contextcheck
+      - path: ^(main|cmd/.*)\.go$
+        linters:
+          # Process-boundary code is allowed to decide how to terminate or emit
+          # final user-facing output.
+          - forbidigo
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+    - golines
+
+  settings:
+    gci:
+      # Keep imports grouped predictably, with the module path isolated from
+      # third-party imports to reduce churn in diffs.
+      sections:
+        - standard
+        - default
+        - prefix(github.com/shuymn/go-template)
+      custom-order: true
+
+    gofumpt:
+      module-path: github.com/shuymn/go-template
+      extra-rules: true
+
+    goimports:
+      local-prefixes:
+        - github.com/shuymn/go-template
+
+    golines:
+      max-len: 120
+      reformat-tags: false
+
+  exclusions:
+    generated: strict
+    warn-unused: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
