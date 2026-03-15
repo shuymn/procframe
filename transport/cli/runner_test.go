@@ -264,3 +264,238 @@ func TestRunner_HandlerError(t *testing.T) {
 		t.Fatalf("want CodeNotFound, got %q", pfErr.Code)
 	}
 }
+
+func TestRunner_PreParse_JSON(t *testing.T) {
+	t.Parallel()
+
+	var gotArgs []string
+	root := &cli.Node{
+		Children: map[string]*cli.Node{
+			"cmd": {
+				Segment: "cmd",
+				Run: func(_ context.Context, args []string, _ io.Writer) error {
+					gotArgs = args
+					return nil
+				},
+			},
+		},
+	}
+	r := cli.NewRunner(root, cli.WithStdout(&bytes.Buffer{}), cli.WithStderr(&bytes.Buffer{}))
+	err := r.Run(t.Context(), []string{"--json", `{"msg":"hi"}`, "cmd"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(gotArgs) != 0 {
+		t.Fatalf("want no remaining args, got %v", gotArgs)
+	}
+}
+
+func TestRunner_PreParse_Output(t *testing.T) {
+	t.Parallel()
+
+	var gotFormat cli.OutputFormat
+	root := &cli.Node{
+		Children: map[string]*cli.Node{
+			"cmd": {
+				Segment: "cmd",
+				Run: func(ctx context.Context, _ []string, _ io.Writer) error {
+					gotFormat = cli.OutputFormatFromContext(ctx)
+					return nil
+				},
+			},
+		},
+	}
+	r := cli.NewRunner(root, cli.WithStdout(&bytes.Buffer{}), cli.WithStderr(&bytes.Buffer{}))
+	err := r.Run(t.Context(), []string{"--output", "json", "cmd"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotFormat != cli.OutputJSON {
+		t.Fatal("want OutputJSON in context")
+	}
+}
+
+func TestRunner_PreParse_OutputInvalid(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Node{
+		Children: map[string]*cli.Node{
+			"cmd": {
+				Segment: "cmd",
+				Run:     func(context.Context, []string, io.Writer) error { return nil },
+			},
+		},
+	}
+	r := cli.NewRunner(root, cli.WithStdout(&bytes.Buffer{}), cli.WithStderr(&bytes.Buffer{}))
+	err := r.Run(t.Context(), []string{"--output", "xml", "cmd"})
+	if err == nil {
+		t.Fatal("expected error for invalid --output")
+	}
+	if !strings.Contains(err.Error(), "xml") {
+		t.Fatalf("want error mentioning xml, got: %v", err)
+	}
+}
+
+func TestRunner_PreParse_JSONMissing(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Node{
+		Children: map[string]*cli.Node{
+			"cmd": {
+				Segment: "cmd",
+				Run:     func(context.Context, []string, io.Writer) error { return nil },
+			},
+		},
+	}
+	r := cli.NewRunner(root, cli.WithStdout(&bytes.Buffer{}), cli.WithStderr(&bytes.Buffer{}))
+	err := r.Run(t.Context(), []string{"cmd", "--json"})
+	if err == nil {
+		t.Fatal("expected error for --json without value")
+	}
+}
+
+func TestRunner_PreParse_JSONEqualsForm(t *testing.T) {
+	t.Parallel()
+
+	var gotArgs []string
+	root := &cli.Node{
+		Children: map[string]*cli.Node{
+			"cmd": {
+				Segment: "cmd",
+				Run: func(_ context.Context, args []string, _ io.Writer) error {
+					gotArgs = args
+					return nil
+				},
+			},
+		},
+	}
+	r := cli.NewRunner(root, cli.WithStdout(&bytes.Buffer{}), cli.WithStderr(&bytes.Buffer{}))
+	err := r.Run(t.Context(), []string{"--json={\"msg\":\"hi\"}", "cmd"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(gotArgs) != 0 {
+		t.Fatalf("want no remaining args, got %v", gotArgs)
+	}
+}
+
+func TestRunner_PreParse_OutputEqualsForm(t *testing.T) {
+	t.Parallel()
+
+	var gotFormat cli.OutputFormat
+	root := &cli.Node{
+		Children: map[string]*cli.Node{
+			"cmd": {
+				Segment: "cmd",
+				Run: func(ctx context.Context, _ []string, _ io.Writer) error {
+					gotFormat = cli.OutputFormatFromContext(ctx)
+					return nil
+				},
+			},
+		},
+	}
+	r := cli.NewRunner(root, cli.WithStdout(&bytes.Buffer{}), cli.WithStderr(&bytes.Buffer{}))
+	err := r.Run(t.Context(), []string{"--output=json", "cmd"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gotFormat != cli.OutputJSON {
+		t.Fatal("want OutputJSON")
+	}
+}
+
+func TestRunner_PreParse_DuplicateJSON(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Node{
+		Children: map[string]*cli.Node{
+			"cmd": {
+				Segment: "cmd",
+				Run:     func(context.Context, []string, io.Writer) error { return nil },
+			},
+		},
+	}
+	r := cli.NewRunner(root, cli.WithStdout(&bytes.Buffer{}), cli.WithStderr(&bytes.Buffer{}))
+	err := r.Run(t.Context(), []string{"--json", "{}", "--json", "{}", "cmd"})
+	if err == nil {
+		t.Fatal("expected error for duplicate --json")
+	}
+	if !strings.Contains(err.Error(), "multiple times") {
+		t.Fatalf("want 'multiple times' error, got: %v", err)
+	}
+}
+
+func TestRunner_PreParse_DuplicateOutput(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Node{
+		Children: map[string]*cli.Node{
+			"cmd": {
+				Segment: "cmd",
+				Run:     func(context.Context, []string, io.Writer) error { return nil },
+			},
+		},
+	}
+	r := cli.NewRunner(root, cli.WithStdout(&bytes.Buffer{}), cli.WithStderr(&bytes.Buffer{}))
+	err := r.Run(t.Context(), []string{"--output", "json", "--output", "text", "cmd"})
+	if err == nil {
+		t.Fatal("expected error for duplicate --output")
+	}
+	if !strings.Contains(err.Error(), "multiple times") {
+		t.Fatalf("want 'multiple times' error, got: %v", err)
+	}
+}
+
+func TestRunner_StructuredErrorJSON(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Node{
+		Children: map[string]*cli.Node{
+			"cmd": {
+				Segment: "cmd",
+				Run: func(context.Context, []string, io.Writer) error {
+					return &procframe.Error{
+						Code:    procframe.CodeNotFound,
+						Message: "missing",
+					}
+				},
+			},
+		},
+	}
+	var stderr bytes.Buffer
+	r := cli.NewRunner(root, cli.WithStdout(&bytes.Buffer{}), cli.WithStderr(&stderr))
+	err := r.Run(t.Context(), []string{"--output", "json", "cmd"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(stderr.String(), `"code":"not_found"`) {
+		t.Fatalf("want structured error on stderr, got:\n%s", stderr.String())
+	}
+}
+
+func TestRunner_StructuredErrorNotWrittenWithoutOutputJSON(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Node{
+		Children: map[string]*cli.Node{
+			"cmd": {
+				Segment: "cmd",
+				Run: func(context.Context, []string, io.Writer) error {
+					return &procframe.Error{
+						Code:    procframe.CodeNotFound,
+						Message: "missing",
+					}
+				},
+			},
+		},
+	}
+	var stderr bytes.Buffer
+	r := cli.NewRunner(root, cli.WithStdout(&bytes.Buffer{}), cli.WithStderr(&stderr))
+	err := r.Run(t.Context(), []string{"cmd"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("want no structured error without --output json, got:\n%s", stderr.String())
+	}
+}

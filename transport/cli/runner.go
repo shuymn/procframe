@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+
+	"github.com/shuymn/procframe"
 )
 
 // Runner holds a CLI command tree and dispatches execution.
@@ -51,7 +54,26 @@ func (r *Runner) Stderr() io.Writer { return r.stderr }
 // Run parses args, traverses the command tree, and executes the
 // matched leaf command. Returns nil on success or help display.
 func (r *Runner) Run(ctx context.Context, args []string) error {
-	return r.traverse(ctx, r.root, args, []string{})
+	remaining, gf, err := preParseGlobalFlags(args)
+	if err != nil {
+		return err
+	}
+	if gf.jsonPayload != "" {
+		ctx = WithJSONPayload(ctx, gf.jsonPayload)
+	}
+	if gf.outputFmt != "" {
+		ctx = WithOutputFormat(ctx, gf.outputFmt)
+	}
+
+	runErr := r.traverse(ctx, r.root, remaining, []string{})
+	if runErr != nil {
+		var pfErr *procframe.Error
+		if errors.As(runErr, &pfErr) && OutputFormatFromContext(ctx) == OutputJSON {
+			//nolint:errcheck // best-effort structured error output
+			FormatErrorJSON(r.stderr, pfErr)
+		}
+	}
+	return runErr
 }
 
 // errHelp is a sentinel indicating that help was displayed.
@@ -143,4 +165,87 @@ func (r *Runner) dispatch(ctx context.Context, node *Node, args, path []string) 
 		return fmt.Errorf("command %q is not runnable", name)
 	}
 	return child.Run(ctx, remaining, r.stdout)
+}
+
+// globalFlags holds the extracted global flags from pre-parsing.
+type globalFlags struct {
+	jsonPayload string
+	outputFmt   OutputFormat
+}
+
+// preParseGlobalFlags extracts --json and --output from args before
+// the command tree sees them. Returns the remaining args plus the
+// extracted global flags.
+func preParseGlobalFlags(args []string) ([]string, globalFlags, error) {
+	remaining := make([]string, 0, len(args))
+	var gf globalFlags
+	var jsonSeen, outputSeen bool
+
+	for i := 0; i < len(args); i++ {
+		key, val, consumed := splitGlobalFlag(args, i)
+		if key == "" {
+			remaining = append(remaining, args[i])
+			continue
+		}
+		if val == "" {
+			return nil, globalFlags{}, fmt.Errorf("%s requires a value", key)
+		}
+		var err error
+		switch key {
+		case "--json":
+			err = setOnce(&gf.jsonPayload, val, key, &jsonSeen)
+		case "--output":
+			err = setOutputFormat(&gf.outputFmt, val, &outputSeen)
+		}
+		if err != nil {
+			return nil, globalFlags{}, err
+		}
+		i += consumed
+	}
+	return remaining, gf, nil
+}
+
+func setOnce(dst *string, val, name string, seen *bool) error {
+	if *seen {
+		return fmt.Errorf("%s specified multiple times", name)
+	}
+	*seen = true
+	*dst = val
+	return nil
+}
+
+func setOutputFormat(dst *OutputFormat, val string, seen *bool) error {
+	if *seen {
+		return fmt.Errorf("--output specified multiple times")
+	}
+	*seen = true
+	switch val {
+	case "text":
+		*dst = OutputText
+	case "json":
+		*dst = OutputJSON
+	default:
+		return fmt.Errorf("--output must be \"text\" or \"json\", got %q", val)
+	}
+	return nil
+}
+
+// splitGlobalFlag checks if args[i] is a global flag (--json or --output)
+// and extracts its value. Supports both "--flag value" and "--flag=value" forms.
+// Returns (key, value, extraArgsConsumed).
+// If args[i] is not a global flag, returns ("", "", 0).
+func splitGlobalFlag(args []string, i int) (string, string, int) {
+	arg := args[i]
+	for _, prefix := range []string{"--json", "--output"} {
+		if arg == prefix {
+			if i+1 < len(args) {
+				return prefix, args[i+1], 1
+			}
+			return prefix, "", 0
+		}
+		if strings.HasPrefix(arg, prefix+"=") {
+			return prefix, arg[len(prefix)+1:], 0
+		}
+	}
+	return "", "", 0
 }
