@@ -25,10 +25,18 @@ message CliGroupOptions {
   optional bool hidden = 4 [default = false];
 }
 
+message CliOptions {
+  optional bool enabled = 1 [default = true];
+}
+
+message WsOptions {
+  optional bool enabled = 1 [default = false];
+}
+
 message ProcOptions {
   optional CliPath cli_path = 1;
-  optional bool cli = 2 [default = true];
-  optional bool ws = 3 [default = false];
+  optional CliOptions cli = 2;
+  optional WsOptions ws = 3;
   optional string summary = 4;
   optional bool hidden = 5 [default = false];
 }

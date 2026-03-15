@@ -89,7 +89,7 @@ func applyMethodOptions(info *methodInfo, m *protogen.Method) {
 		info.Path = proc.CliPath.Segments
 	}
 	if proc.Cli != nil {
-		info.CLI = *proc.Cli
+		info.CLI = proc.Cli.GetEnabled()
 	}
 	if proc.Summary != nil {
 		info.Summary = *proc.Summary
