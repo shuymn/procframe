@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package test.v1;
+
+option go_package = "github.com/shuymn/procframe/gen/test/v1;testv1";
+
+import "procframe/options/v1/options.proto";
+
+enum LogLevel {
+  LOG_LEVEL_UNSPECIFIED = 0;
+  LOG_LEVEL_INFO = 1;
+  LOG_LEVEL_DEBUG = 2;
+}
+
+message RuntimeConfig {
+  string service_name = 1 [
+    (procframe.options.v1.config).default_string = "procframe-test",
+    (procframe.options.v1.config).env = "SERVICE_NAME"
+  ];
+
+  LogLevel log_level = 2 [
+    (procframe.options.v1.config).default_string = "info",
+    (procframe.options.v1.config).env = "LOG_LEVEL",
+    (procframe.options.v1.config).bootstrap = true
+  ];
+
+  int32 timeout_sec = 3 [
+    (procframe.options.v1.config).default_string = "30",
+    (procframe.options.v1.config).env = "TIMEOUT_SEC",
+    (procframe.options.v1.config).bootstrap = true
+  ];
+
+  string api_token = 4 [
+    (procframe.options.v1.config).env = "API_TOKEN",
+    (procframe.options.v1.config).required = true,
+    (procframe.options.v1.config).secret = true
+  ];
+
+  int32 secret_port = 5 [
+    (procframe.options.v1.config).env = "SECRET_PORT",
+    (procframe.options.v1.config).bootstrap = true,
+    (procframe.options.v1.config).secret = true
+  ];
+}
