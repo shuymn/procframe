@@ -185,9 +185,9 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 		Segment: "cliopts",
 		Summary: "CLI options test",
 		Children: map[string]*cli.Node{
-			"ws-enabled":       node_cliopts_ws_enabled,
 			"default-enabled":  node_cliopts_default_enabled,
 			"explicit-enabled": node_cliopts_explicit_enabled,
+			"ws-enabled":       node_cliopts_ws_enabled,
 		},
 	}
 	root := &cli.Node{

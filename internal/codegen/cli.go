@@ -2,6 +2,7 @@ package codegen
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"google.golang.org/protobuf/compiler/protogen"
@@ -101,9 +102,10 @@ func collectDecls(node *treeNode, path []string, svc *protogen.Service, svcInfo 
 		return
 	}
 
-	for name, child := range node.Children {
+	names := sortedKeys(node.Children)
+	for _, name := range names {
 		childPath := append(append([]string{}, path...), name)
-		collectDecls(child, childPath, svc, svcInfo, decls)
+		collectDecls(node.Children[name], childPath, svc, svcInfo, decls)
 	}
 
 	*decls = append(*decls, nodeDecl{
@@ -111,6 +113,16 @@ func collectDecls(node *treeNode, path []string, svc *protogen.Service, svcInfo 
 		varName: pathToVarName(path),
 		path:    path,
 	})
+}
+
+// sortedKeys returns the keys of a map[string]*treeNode in sorted order.
+func sortedKeys(m map[string]*treeNode) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func pathToVarName(path []string) string {
@@ -140,10 +152,10 @@ func emitGroupDecl(g *protogen.GeneratedFile, d nodeDecl, bindCtxs []bindIntoCtx
 		emitGroupFlagSet(g, d, bc)
 	}
 	g.P("\t\tChildren: map[string]*", cliPkg.Ident("Node"), "{")
-	for name, child := range d.node.Children {
+	childNames := sortedKeys(d.node.Children)
+	for _, name := range childNames {
 		childPath := append(append([]string{}, d.path...), name)
 		childVar := pathToVarName(childPath)
-		_ = child
 		g.P("\t\t\t", fmt.Sprintf("%q", name), ": ", childVar, ",")
 	}
 	g.P("\t\t},")
