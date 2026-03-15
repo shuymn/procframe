@@ -24,6 +24,11 @@ pre-commit:
       glob: "**/*.go"
       run: task lint
 
+    proto-lint:
+      tags: [lint]
+      glob: "**/*.proto"
+      run: task proto:lint
+
     tidy:
       tags: [deps]
       glob: "go.mod,go.sum"

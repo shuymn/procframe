@@ -46,6 +46,14 @@ jobs:
           version: ${{ steps.set-golangci-lint-version.outputs.version }}
           args: --timeout=5m
 
+      - name: Set up buf
+        uses: bufbuild/buf-action@fd21066df7214747548607aaa45548ba2b9bc1ff # v1.4.0
+        with:
+          setup_only: true
+
+      - name: Run proto lint
+        run: buf lint
+
   test:
     name: Test
     needs: lint
@@ -97,5 +105,5 @@ jobs:
       - name: Set up Task
         uses: shuymn/github-actions/.github/actions/setup-task@417b9296c6693ab840d5bb5600a18581ab877752
 
-      - name: Build binary
-        run: task build
+      - name: Build check
+        run: task build:check
