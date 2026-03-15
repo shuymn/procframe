@@ -1,0 +1,46 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+
+	"github.com/shuymn/procframe"
+	greeterv1 "github.com/shuymn/procframe/examples/gen/greeter/v1"
+	"github.com/shuymn/procframe/transport/cli"
+)
+
+type handler struct {
+	cfg *greeterv1.GreeterConfig
+}
+
+func (h *handler) Greet(
+	_ context.Context,
+	req *procframe.Request[greeterv1.GreetRequest],
+) (*procframe.Response[greeterv1.GreetResponse], error) {
+	greeting := fmt.Sprintf("%s %s%s", h.cfg.Prefix, req.Msg.Name, h.cfg.Suffix)
+	return &procframe.Response[greeterv1.GreetResponse]{
+		Msg: &greeterv1.GreetResponse{
+			Greeting: greeting,
+		},
+	}, nil
+}
+
+func main() {
+	cfg, rest, err := greeterv1.LoadRuntimeConfig(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	runner := greeterv1.NewGreeterServiceCLIRunner(&handler{cfg: cfg})
+	if err := runner.Run(context.Background(), rest); err != nil {
+		var pfErr *procframe.Error
+		if errors.As(err, &pfErr) {
+			os.Exit(cli.ExitCode(pfErr.Code))
+		}
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
