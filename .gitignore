@@ -13,5 +13,10 @@
 # Go cache (local for LLM access)
 /.cache/
 
+# Example binaries
+/examples/echo/echo
+/examples/ticker/ticker
+/examples/greeter/greeter
+
 # env files
 .env

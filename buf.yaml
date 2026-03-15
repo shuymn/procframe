@@ -8,6 +8,10 @@ modules:
     lint:
       use:
         - MINIMAL
+  - path: examples/proto
+    lint:
+      use:
+        - MINIMAL
 breaking:
   use:
     - FILE

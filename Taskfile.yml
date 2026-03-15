@@ -169,6 +169,17 @@ tasks:
       - go build -o {{.BIN_DIR}}/protoc-gen-procframe-go ./cmd/protoc-gen-procframe-go/
       - "{{.BIN_DIR}}/buf generate --template buf.gen.test.yaml"
 
+  proto:gen:examples:
+    desc: Generate Go code from example protos
+    deps:
+      - task: install:buf
+        silent: true
+      - task: install:protoc-gen-go
+        silent: true
+    cmds:
+      - go build -o {{.BIN_DIR}}/protoc-gen-procframe-go ./cmd/protoc-gen-procframe-go/
+      - "{{.BIN_DIR}}/buf generate --template buf.gen.examples.yaml"
+
   proto:lint:
     desc: Run buf lint on proto files
     summary: |
