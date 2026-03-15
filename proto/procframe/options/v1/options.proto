@@ -34,13 +34,13 @@ message ProcOptions {
 }
 
 extend google.protobuf.FieldOptions {
-  optional ConfigFieldOptions config = 51001 [retention = RETENTION_SOURCE];
+  optional ConfigFieldOptions config = 51001;
 }
 
 extend google.protobuf.ServiceOptions {
-  optional CliGroupOptions cli_group = 52001 [retention = RETENTION_SOURCE];
+  optional CliGroupOptions cli_group = 52001;
 }
 
 extend google.protobuf.MethodOptions {
-  optional ProcOptions proc = 52002 [retention = RETENTION_SOURCE];
+  optional ProcOptions proc = 52002;
 }
