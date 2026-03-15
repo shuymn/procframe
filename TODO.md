@@ -60,7 +60,7 @@
   - Why not split vertically further?: handler interface 生成だけでは transport なしに動作確認できず、外部から観測可能な前進にならない。codegen と CLI transport は最初の vertical slice として不可分
   - Escalate if: protoc plugin API (protogen) で procframe custom option の読み取りに制約がある場合
 
-- [ ] Theme: CLI server-stream + agent features
+- [x] Theme: CLI server-stream + agent features
   - Outcome: CLI で server-stream が動作し、agent 向け機能 (--json, schema, --output json, 構造化 error, exit code) が使える
   - Goal: server-stream CLI 出力、--json raw payload 入力、schema サブコマンド、--output json 構造化出力、exit code mapping、構造化 error 出力
   - Must Not Break: Theme 2 の unary CLI 動作 (flat flags + text output)
