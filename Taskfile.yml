@@ -7,7 +7,7 @@ env:
   GOLANGCI_LINT_CACHE: "{{.ROOT_DIR}}/.cache/golangci-lint"
 
 vars:
-  BINARY_NAME: go-template
+  BINARY_NAME: procframe
   BIN_DIR: bin
   BINARY_PATH: "{{.BIN_DIR}}/{{.BINARY_NAME}}"
   COVERAGE_FILE: coverage.out

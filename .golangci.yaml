@@ -53,7 +53,7 @@ linters:
             - pkg: golang.org/x/net/context
               desc: use standard library context
             # Project-specific examples:
-            # - pkg: github.com/shuymn/go-template/internal/infra
+            # - pkg: github.com/shuymn/procframe/internal/infra
             #   desc: use ports/interfaces instead of importing infra directly
 
     errcheck:
@@ -72,7 +72,7 @@ linters:
       # Treat config/data boundary structs as explicit contracts so field drift is
       # visible in diffs instead of being masked by zero values.
       include:
-        - 'github\.com/shuymn/go-template/.+\.(Config|Options|Params|Query|Event)$'
+        - 'github.com/shuymn/procframe/.+\.(Config|Options|Params|Query|Event)$'
       exclude:
         # Common stdlib/framework structs are intentionally exempt because they
         # are large, evolve outside this repo, and are rarely initialized exhaustively.
@@ -172,16 +172,16 @@ formatters:
       sections:
         - standard
         - default
-        - prefix(github.com/shuymn/go-template)
+        - prefix(github.com/shuymn/procframe)
       custom-order: true
 
     gofumpt:
-      module-path: github.com/shuymn/go-template
+      module-path: github.com/shuymn/procframe
       extra-rules: true
 
     goimports:
       local-prefixes:
-        - github.com/shuymn/go-template
+        - github.com/shuymn/procframe
 
     golines:
       max-len: 120

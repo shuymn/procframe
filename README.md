@@ -1,15 +1,5 @@
-# go-template
+# procframe
 
-<!-- template:start -->
-Minimal Go template with:
-
-- `Taskfile.yml` as the single entrypoint for local tasks, CI, and hooks
-- `golangci-lint` for linting and formatting
-- `lefthook` for `pre-commit` and `pre-push` automation
-- GitHub Actions-friendly task structure
-- Project-local caches under `.cache/` for Go and lint tooling
-- Starter docs for repository rules and review conventions
-<!-- template:end -->
 
 This repository was initialized from a Go project template.
 
