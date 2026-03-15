@@ -1,0 +1,13 @@
+version: v2
+modules:
+  - path: proto
+    lint:
+      use:
+        - STANDARD
+  - path: testdata/proto
+    lint:
+      use:
+        - MINIMAL
+breaking:
+  use:
+    - FILE

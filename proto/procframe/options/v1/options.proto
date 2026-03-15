@@ -1,0 +1,46 @@
+syntax = "proto2";
+
+package procframe.options.v1;
+
+option go_package = "github.com/shuymn/procframe/gen/procframe/options/v1;procframeoptionsv1";
+
+import "google/protobuf/descriptor.proto";
+
+message CliPath {
+  repeated string segments = 1;
+}
+
+message ConfigFieldOptions {
+  optional string env = 1;
+  optional string default_string = 2;
+  optional bool required = 3 [default = false];
+  optional bool secret = 4 [default = false];
+  optional bool bootstrap = 5 [default = false];
+}
+
+message CliGroupOptions {
+  optional CliPath path = 1;
+  optional string bind_into = 2;
+  optional string summary = 3;
+  optional bool hidden = 4 [default = false];
+}
+
+message ProcOptions {
+  optional CliPath cli_path = 1;
+  optional bool cli = 2 [default = true];
+  optional bool ws = 3 [default = false];
+  optional string summary = 4;
+  optional bool hidden = 5 [default = false];
+}
+
+extend google.protobuf.FieldOptions {
+  optional ConfigFieldOptions config = 51001 [retention = RETENTION_SOURCE];
+}
+
+extend google.protobuf.ServiceOptions {
+  optional CliGroupOptions cli_group = 52001 [retention = RETENTION_SOURCE];
+}
+
+extend google.protobuf.MethodOptions {
+  optional ProcOptions proc = 52002 [retention = RETENTION_SOURCE];
+}

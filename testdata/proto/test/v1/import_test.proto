@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package test.v1;
+
+import "procframe/options/v1/options.proto";
+
+service TestService {
+  option (procframe.options.v1.cli_group) = {
+    path: {segments: "test"}
+  };
+}
