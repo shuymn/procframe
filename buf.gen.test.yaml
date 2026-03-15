@@ -1,0 +1,10 @@
+version: v2
+plugins:
+  - local: bin/protoc-gen-go
+    out: gen
+    opt: paths=source_relative
+  - local: bin/protoc-gen-procframe-go
+    out: gen
+    opt: paths=source_relative
+inputs:
+  - directory: testdata/proto

@@ -11,6 +11,7 @@ vars:
   COVERAGE_FILE: coverage.out
   GOLANGCI_LINT_VERSION: v2.11.2
   BUF_VERSION: v1.54.0
+  PROTOC_GEN_GO_VERSION: v1.36.11
   GITLEAKS_BIN: gitleaks
 
 tasks:
@@ -90,6 +91,22 @@ tasks:
       - mkdir -p {{.BIN_DIR}}
       - curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b {{.BIN_DIR}} {{.GOLANGCI_LINT_VERSION}}
 
+  install:protoc-gen-go:
+    internal: true
+    desc: Install protoc-gen-go if needed
+    summary: |
+      Internal helper that installs a pinned protoc-gen-go version into {{.BIN_DIR}}.
+      Not intended to be called directly.
+    vars:
+      CURRENT_VERSION:
+        sh: '{{.BIN_DIR}}/protoc-gen-go --version 2>/dev/null | grep -oE "v[0-9]+\.[0-9]+\.[0-9]+" || echo ""'
+    status:
+      - test -f {{.BIN_DIR}}/protoc-gen-go
+      - test "{{.CURRENT_VERSION}}" = "{{.PROTOC_GEN_GO_VERSION}}"
+    cmds:
+      - mkdir -p {{.BIN_DIR}}
+      - GOBIN={{.ROOT_DIR}}/{{.BIN_DIR}} go install google.golang.org/protobuf/cmd/protoc-gen-go@{{.PROTOC_GEN_GO_VERSION}}
+
   install:buf:
     internal: true
     desc: Install buf if needed
@@ -123,6 +140,34 @@ tasks:
       - cmd: "{{.BIN_DIR}}/golangci-lint version"
         silent: true
       - "{{.BIN_DIR}}/golangci-lint run"
+
+  proto:gen:
+    desc: Generate Go code from library proto files
+    summary: |
+      Runs buf generate on proto/ to produce Go types for options.proto.
+      Output goes to gen/procframe/ directory. This output is committed.
+    deps:
+      - task: install:buf
+        silent: true
+      - task: install:protoc-gen-go
+        silent: true
+    cmds:
+      - "{{.BIN_DIR}}/buf generate"
+
+  proto:gen:test:
+    desc: Generate Go code from test fixture protos
+    summary: |
+      Builds protoc-gen-procframe-go, then runs buf generate on testdata/proto/
+      to produce handler interfaces and CLI runners for integration tests.
+      Output goes to gen/test/ and is gitignored.
+    deps:
+      - task: install:buf
+        silent: true
+      - task: install:protoc-gen-go
+        silent: true
+    cmds:
+      - go build -o {{.BIN_DIR}}/protoc-gen-procframe-go ./cmd/protoc-gen-procframe-go/
+      - "{{.BIN_DIR}}/buf generate --template buf.gen.test.yaml"
 
   proto:lint:
     desc: Run buf lint on proto files
@@ -221,6 +266,7 @@ tasks:
       - task: lint
       - task: proto:lint
       - task: proto:build
+      - task: proto:gen:test
       - task: build:check
       - task: test
       - task: tidy
