@@ -27,7 +27,7 @@
 
 ## Themes
 
-- [ ] Theme: Runtime core + options.proto
+- [x] Theme: Runtime core + options.proto
   - Outcome: procframe パッケージが Go モジュールとしてコンパイル可能になり、options.proto が protoc で import 可能になる
   - Goal: Request[T], Response[T], ServerStream[T], Meta, Error, Code 型と options.proto の提供
   - Must Not Break: なし (新規プロジェクト)
