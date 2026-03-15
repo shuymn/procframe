@@ -80,20 +80,20 @@
   - Why not split vertically further?: --json, schema, --output json は agent workflow として一体で使われ、個別提供では agent が self-discovery → structured I/O の流れを完結できない
   - Escalate if: proto descriptor から JSON Schema 相当の型情報を codegen 時に静的生成する方法に制約がある場合
 
-- [ ] Theme: Config system
+- [x] Theme: Config system
   - Outcome: ユーザーが config.proto を定義し、JSON file + env + bootstrap CLI flags から immutable config を生成できる
-  - Goal: config.proto からの codegen (LoadRuntimeConfig 関数生成)、defaults → file(JSON) → env → bootstrap CLI → validate → immutable の merge chain
-  - Must Not Break: Theme 1 の public API; codegen plugin の既存生成物
-  - Non-goals: YAML/TOML, config hot reload, config watch, 複数 config ファイル, config validation framework
+  - Goal: `config.proto` から `LoadRuntimeConfig(argv []string) (*RuntimeConfig, []string, error)` と generated runtime config pointer に対する secret-safe `fmt.Formatter` 実装を生成し、defaults → file(JSON) → env → bootstrap CLI → validate → immutable の merge chain を成立させる
+  - Must Not Break: Theme 1 の public API; Theme 2/3 の codegen plugin 生成物と CLI runtime
+  - Non-goals: YAML/TOML, config hot reload, config watch, 複数 config ファイル, config validation framework, scalar/enum 以外の config field support, env 名自動導出
   - Acceptance (EARS):
-    - When config.proto に ConfigFieldOptions を付けたフィールドがあるとき protoc-gen-procframe-go が LoadRuntimeConfig 関数を生成する
+    - When file 名が `config.proto` で top-level message に ConfigFieldOptions を付けた scalar/enum field があるとき protoc-gen-procframe-go が LoadRuntimeConfig 関数と generated runtime config pointer に対する secret-safe `fmt.Formatter` 実装を生成する
     - When JSON config ファイル、環境変数、bootstrap CLI flags を組み合わせて LoadRuntimeConfig を呼ぶと defaults → file → env → bootstrap の優先順位で merge された config が返る
     - When `required=true` のフィールドが未設定のとき error が返る
-    - When `bootstrap=true` のフィールドは bootstrap flags として parse され、残りの argv が procedure args として返る
-    - When `secret=true` のフィールドはログ出力時にマスクされる
-  - Evidence: `run=go test ./config/... && go test ./cmd/protoc-gen-procframe-go/...; oracle=integration test pass; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
+    - When `bootstrap=true` のフィールドは argv 先頭の連続 token だけ bootstrap flags として parse され、最初の非-bootstrap token 以降が procedure args として返る
+    - When `secret=true` のフィールドを持つ generated runtime config pointer を `fmt` 経由で出力しても secret 値は露出せず、error 文脈でも値が露出しない
+    - If config option が scalar/enum 以外の field、重複 env 名、重複 bootstrap flag、または parse 不能な `default_string` に付いているとき codegen error になる
+  - Evidence: `run=task proto:gen:test && go test ./internal/codegen/... && go test ./config/... && go test ./transport/cli/...; oracle=config fixture generation + integration test pass + CLI regression pass; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
   - Gates: `static`, `integration`
-  - Executable doc: fixture config.proto → codegen → JSON file + env vars + bootstrap flags → LoadRuntimeConfig → 期待 config 値検証の integration test
-  - Why not split vertically further?: config の merge chain (defaults → file → env → bootstrap → validate) は各層が密結合しており、部分提供では config システムとして成立しない
-  - Escalate if: bootstrap CLI の argv 分離ロジックで procedure args との境界が曖昧になる場合 (e.g. `--config` と procedure flag の衝突)
-
+  - Executable doc: `testdata/proto/test/v1/config.proto` → `task proto:gen:test` → generated `LoadRuntimeConfig` / pointer-based `fmt.Formatter` → JSON file + env vars + bootstrap flags + procedure args を使う integration test → 期待 config 値、format 時の secret mask、残余 argv を検証
+  - Why not split vertically further?: config の merge chain と generated API (`LoadRuntimeConfig`, generated runtime config pointer の secret-safe `fmt.Formatter`) は file/env/bootstrap/validate が揃って初めて外から観測できる前進になるため、部分提供では config システムとして成立しない
+  - Escalate if: bootstrap CLI の argv prefix-only 規則で procedure args と安全に分離できない入力が発見された場合

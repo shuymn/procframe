@@ -359,6 +359,8 @@ func LoadRuntimeConfig(argv []string) (*RuntimeConfig, []string, error)
 * `[]string`: procedure 用に残した argv
 * `error`
 
+生成された config type は `fmt.Formatter` を実装し、`LoadRuntimeConfig` が返す generated runtime config pointer をそのまま format / log しても `secret=true` のフィールドが露出しないようにする。
+
 ## 8.4 bootstrap CLI
 
 bootstrap CLI は config 用にだけ使う。
