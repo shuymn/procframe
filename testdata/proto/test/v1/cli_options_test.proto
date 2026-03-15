@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+package test.v1;
+
+import "procframe/options/v1/options.proto";
+
+option go_package = "github.com/shuymn/procframe/internal/gen/test/v1;testv1";
+
+message PingRequest {
+  string target = 1;
+}
+
+message PingResponse {
+  string result = 1;
+}
+
+// CliOptionsTestService exercises nested CliOptions / WsOptions messages
+// in ProcOptions.
+service CliOptionsTestService {
+  option (procframe.options.v1.cli_group) = {
+    path: {
+      segments: ["cliopts"]
+    }
+    summary: "CLI options test"
+  };
+
+  // Enabled: cli defaults to enabled when omitted.
+  rpc DefaultEnabled(PingRequest) returns (PingResponse) {
+    option (procframe.options.v1.proc) = {
+      cli_path: {
+        segments: ["default-enabled"]
+      }
+      summary: "Default CLI enabled"
+    };
+  }
+
+  // Enabled: explicitly enabled via nested message.
+  rpc ExplicitEnabled(PingRequest) returns (PingResponse) {
+    option (procframe.options.v1.proc) = {
+      cli_path: {
+        segments: ["explicit-enabled"]
+      }
+      cli: {
+        enabled: true
+      }
+      summary: "Explicitly CLI enabled"
+    };
+  }
+
+  // Disabled: explicitly disabled via nested message.
+  rpc ExplicitDisabled(PingRequest) returns (PingResponse) {
+    option (procframe.options.v1.proc) = {
+      cli_path: {
+        segments: ["explicit-disabled"]
+      }
+      cli: {
+        enabled: false
+      }
+      summary: "Explicitly CLI disabled"
+    };
+  }
+
+  // WS: ws enabled does not affect CLI generation.
+  rpc WsEnabled(PingRequest) returns (PingResponse) {
+    option (procframe.options.v1.proc) = {
+      cli_path: {
+        segments: ["ws-enabled"]
+      }
+      ws: {
+        enabled: true
+      }
+      summary: "WS enabled, CLI default"
+    };
+  }
+}
