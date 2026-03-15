@@ -454,9 +454,9 @@ func emitEnumFlagVar(g *protogen.GeneratedFile, field *protogen.Field, indent st
 // emitEnumMappingEntries emits []cli.EnumMapping literal entries
 // using enumCLIValues to ensure consistent transform with validation.
 func emitEnumMappingEntries(g *protogen.GeneratedFile, enumType *protogen.Enum, indent string) {
-	values := make([]enumValueInfo, 0, len(enumType.Values))
+	values := make([]*enumValueInfo, 0, len(enumType.Values))
 	for _, v := range enumType.Values {
-		values = append(values, enumValueInfo{
+		values = append(values, &enumValueInfo{
 			ProtoName: string(v.Desc.Name()),
 			Number:    int32(v.Desc.Number()),
 		})
@@ -813,9 +813,9 @@ func schemaFieldType(field *protogen.Field) string {
 // enumCLIValuesForSchema returns the CLI value names for an enum type,
 // excluding the UNSPECIFIED (0) value.
 func enumCLIValuesForSchema(enumType *protogen.Enum) []string {
-	values := make([]enumValueInfo, 0, len(enumType.Values))
+	values := make([]*enumValueInfo, 0, len(enumType.Values))
 	for _, v := range enumType.Values {
-		values = append(values, enumValueInfo{
+		values = append(values, &enumValueInfo{
 			ProtoName: string(v.Desc.Name()),
 			Number:    int32(v.Desc.Number()),
 		})
