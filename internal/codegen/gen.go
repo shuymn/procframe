@@ -7,8 +7,8 @@ import (
 
 // Generate processes a single proto file and emits handler interface
 // and CLI runner files for each service that has CLI-exposed methods.
-func Generate(plugin *protogen.Plugin, file *protogen.File) error {
-	services, cfgInfo, err := extractGenerationInputs(file)
+func Generate(plugin *protogen.Plugin, file *protogen.File, params *Params) error {
+	services, cfgInfo, err := extractGenerationInputs(file, params)
 	if err != nil {
 		return err
 	}
@@ -16,7 +16,7 @@ func Generate(plugin *protogen.Plugin, file *protogen.File) error {
 		return nil
 	}
 
-	if err := validateGenerationInputs(plugin, services, cfgInfo); err != nil {
+	if err := validateGenerationInputs(plugin, services, cfgInfo, params); err != nil {
 		return err
 	}
 
@@ -42,13 +42,13 @@ func Generate(plugin *protogen.Plugin, file *protogen.File) error {
 	return nil
 }
 
-func extractGenerationInputs(file *protogen.File) ([]serviceInfo, *configInfo, error) {
+func extractGenerationInputs(file *protogen.File, params *Params) ([]serviceInfo, *configInfo, error) {
 	services := make([]serviceInfo, 0, len(file.Services))
 	for _, svc := range file.Services {
 		services = append(services, extractServiceInfo(svc))
 	}
 
-	cfgInfo, err := extractConfigInfo(file)
+	cfgInfo, err := extractConfigInfo(file, params)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -60,6 +60,7 @@ func validateGenerationInputs(
 	plugin *protogen.Plugin,
 	services []serviceInfo,
 	cfgInfo *configInfo,
+	params *Params,
 ) error {
 	if err := validateDuplicatePaths(services); err != nil {
 		return err
@@ -70,7 +71,7 @@ func validateGenerationInputs(
 	if err := validateBindInto(services, plugin); err != nil {
 		return err
 	}
-	if err := validateConfigInfo(cfgInfo); err != nil {
+	if err := validateConfigInfo(cfgInfo, params); err != nil {
 		return err
 	}
 	return nil

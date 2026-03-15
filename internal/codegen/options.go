@@ -1,8 +1,6 @@
 package codegen
 
 import (
-	"path"
-
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/proto"
 
@@ -99,8 +97,8 @@ func applyMethodOptions(info *methodInfo, m *protogen.Method) {
 	}
 }
 
-func extractConfigInfo(file *protogen.File) (*configInfo, error) {
-	if path.Base(file.Desc.Path()) != "config.proto" {
+func extractConfigInfo(file *protogen.File, params *Params) (*configInfo, error) {
+	if !params.isConfigProto(file.Desc.Path()) {
 		return nil, nil
 	}
 

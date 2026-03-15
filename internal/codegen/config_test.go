@@ -45,7 +45,7 @@ func TestValidateConfigInfo(t *testing.T) {
 				},
 			},
 		}
-		if err := validateConfigInfo(cfg); err != nil {
+		if err := validateConfigInfo(cfg, &Params{}); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -66,7 +66,52 @@ func TestValidateConfigInfo(t *testing.T) {
 				},
 			},
 		}
-		if err := validateConfigInfo(cfg); err != nil {
+		if err := validateConfigInfo(cfg, &Params{}); err != nil {
+			t.Fatalf("want ignored, got %v", err)
+		}
+	})
+
+	t.Run("custom config_proto validates matching file", func(t *testing.T) {
+		t.Parallel()
+		cfg := &configInfo{
+			FilePath: "my/custom/settings.proto",
+			Message: &configMessageInfo{
+				GoName: "RuntimeConfig",
+				Fields: []*configFieldInfo{
+					{
+						ProtoName: "token",
+						GoName:    "Token",
+						Kind:      protoreflect.StringKind,
+						HasEnv:    true,
+						Env:       "APP_TOKEN",
+					},
+				},
+			},
+		}
+		params := &Params{ConfigProto: "my/custom/settings.proto"}
+		if err := validateConfigInfo(cfg, params); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("custom config_proto skips non-matching file", func(t *testing.T) {
+		t.Parallel()
+		cfg := &configInfo{
+			FilePath: "other/settings.proto",
+			Message: &configMessageInfo{
+				GoName: "RuntimeConfig",
+				Fields: []*configFieldInfo{
+					{
+						ProtoName: "bad_list",
+						GoName:    "BadList",
+						Kind:      protoreflect.StringKind,
+						IsList:    true,
+					},
+				},
+			},
+		}
+		params := &Params{ConfigProto: "my/custom/settings.proto"}
+		if err := validateConfigInfo(cfg, params); err != nil {
 			t.Fatalf("want ignored, got %v", err)
 		}
 	})
@@ -87,7 +132,7 @@ func TestValidateConfigInfo(t *testing.T) {
 				},
 			},
 		}
-		err := validateConfigInfo(cfg)
+		err := validateConfigInfo(cfg, &Params{})
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -120,7 +165,7 @@ func TestValidateConfigInfo(t *testing.T) {
 				},
 			},
 		}
-		err := validateConfigInfo(cfg)
+		err := validateConfigInfo(cfg, &Params{})
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -145,7 +190,7 @@ func TestValidateConfigInfo(t *testing.T) {
 				},
 			},
 		}
-		err := validateConfigInfo(cfg)
+		err := validateConfigInfo(cfg, &Params{})
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -176,7 +221,7 @@ func TestValidateConfigInfo(t *testing.T) {
 				},
 			},
 		}
-		err := validateConfigInfo(cfg)
+		err := validateConfigInfo(cfg, &Params{})
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -202,7 +247,7 @@ func TestValidateConfigInfo(t *testing.T) {
 				},
 			},
 		}
-		err := validateConfigInfo(cfg)
+		err := validateConfigInfo(cfg, &Params{})
 		if err == nil {
 			t.Fatal("expected error")
 		}
@@ -233,7 +278,7 @@ func TestValidateConfigInfo(t *testing.T) {
 				},
 			},
 		}
-		err := validateConfigInfo(cfg)
+		err := validateConfigInfo(cfg, &Params{})
 		if err == nil {
 			t.Fatal("expected error")
 		}

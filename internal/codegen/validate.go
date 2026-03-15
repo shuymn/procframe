@@ -2,7 +2,6 @@ package codegen
 
 import (
 	"fmt"
-	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -140,8 +139,8 @@ func findField(msg *protogen.Message, protoName string) *protogen.Field {
 	return nil
 }
 
-func validateConfigInfo(cfg *configInfo) error {
-	if !shouldValidateConfig(cfg) {
+func validateConfigInfo(cfg *configInfo, params *Params) error {
+	if !shouldValidateConfig(cfg, params) {
 		return nil
 	}
 
@@ -166,9 +165,9 @@ func validateConfigInfo(cfg *configInfo) error {
 	return nil
 }
 
-func shouldValidateConfig(cfg *configInfo) bool {
+func shouldValidateConfig(cfg *configInfo, params *Params) bool {
 	return cfg != nil &&
-		path.Base(cfg.FilePath) == "config.proto" &&
+		params.isConfigProto(cfg.FilePath) &&
 		len(cfg.Message.Fields) > 0
 }
 

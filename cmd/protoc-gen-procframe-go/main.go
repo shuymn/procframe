@@ -10,12 +10,15 @@ import (
 )
 
 func main() {
-	protogen.Options{}.Run(func(plugin *protogen.Plugin) error {
+	var params codegen.Params
+	protogen.Options{
+		ParamFunc: params.Set,
+	}.Run(func(plugin *protogen.Plugin) error {
 		for _, f := range plugin.Files {
 			if !f.Generate {
 				continue
 			}
-			if err := codegen.Generate(plugin, f); err != nil {
+			if err := codegen.Generate(plugin, f, &params); err != nil {
 				return err
 			}
 		}
