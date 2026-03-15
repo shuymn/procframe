@@ -2,11 +2,15 @@ package codegen
 
 import (
 	"fmt"
+	"path"
 	"slices"
+	"strconv"
 	"strings"
 
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/reflect/protoreflect"
+
+	"github.com/shuymn/procframe/config"
 )
 
 // validateDuplicatePaths checks that no two methods resolve to the same
@@ -56,9 +60,9 @@ func checkMessageEnums(msg *protogen.Message, checked map[string]bool) error {
 		}
 		checked[enumName] = true
 
-		values := make([]enumValueInfo, 0, len(field.Enum.Values))
+		values := make([]*enumValueInfo, 0, len(field.Enum.Values))
 		for _, v := range field.Enum.Values {
-			values = append(values, enumValueInfo{
+			values = append(values, &enumValueInfo{
 				ProtoName: string(v.Desc.Name()),
 				Number:    int32(v.Desc.Number()),
 			})
@@ -134,4 +138,203 @@ func findField(msg *protogen.Message, protoName string) *protogen.Field {
 		}
 	}
 	return nil
+}
+
+func validateConfigInfo(cfg *configInfo) error {
+	if !shouldValidateConfig(cfg) {
+		return nil
+	}
+
+	envSeen := map[string]string{}
+	bootstrapSeen := map[string]string{}
+
+	for _, field := range cfg.Message.Fields {
+		fieldPath := cfg.Message.GoName + "." + field.ProtoName
+		if err := validateConfigFieldType(fieldPath, field); err != nil {
+			return err
+		}
+		if err := validateConfigFieldMetadata(fieldPath, field, envSeen, bootstrapSeen); err != nil {
+			return err
+		}
+		if field.HasDefault {
+			if err := validateConfigDefault(fieldPath, field); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func shouldValidateConfig(cfg *configInfo) bool {
+	return cfg != nil &&
+		path.Base(cfg.FilePath) == "config.proto" &&
+		len(cfg.Message.Fields) > 0
+}
+
+func validateConfigFieldMetadata(
+	fieldPath string,
+	field *configFieldInfo,
+	envSeen map[string]string,
+	bootstrapSeen map[string]string,
+) error {
+	if err := validateConfigEnv(fieldPath, field, envSeen); err != nil {
+		return err
+	}
+	if err := validateConfigBootstrap(fieldPath, field, bootstrapSeen); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateConfigEnv(
+	fieldPath string,
+	field *configFieldInfo,
+	envSeen map[string]string,
+) error {
+	if !field.HasEnv {
+		return nil
+	}
+	if field.Env == "" {
+		return fmt.Errorf("config field %s: env must not be empty", fieldPath)
+	}
+	if prev, dup := envSeen[field.Env]; dup {
+		return fmt.Errorf(
+			"config field %s: env %q duplicates %s",
+			fieldPath, field.Env, prev,
+		)
+	}
+	envSeen[field.Env] = fieldPath
+	return nil
+}
+
+func validateConfigBootstrap(
+	fieldPath string,
+	field *configFieldInfo,
+	bootstrapSeen map[string]string,
+) error {
+	if !field.Bootstrap {
+		return nil
+	}
+
+	flagName := field.FlagName()
+	if flagName == config.ReservedConfigFlag {
+		return fmt.Errorf(
+			"config field %s: bootstrap flag --%s is reserved",
+			fieldPath, config.ReservedConfigFlag,
+		)
+	}
+	if prev, dup := bootstrapSeen[flagName]; dup {
+		return fmt.Errorf(
+			"config field %s: bootstrap flag --%s duplicates %s",
+			fieldPath, flagName, prev,
+		)
+	}
+	bootstrapSeen[flagName] = fieldPath
+	return nil
+}
+
+func errMultipleConfigMessages(filePath string, msgs []*configMessageInfo) error {
+	names := make([]string, 0, len(msgs))
+	for _, msg := range msgs {
+		names = append(names, msg.GoName)
+	}
+	slices.Sort(names)
+	return fmt.Errorf(
+		"%s: exactly one top-level config message with field options is allowed; found %s",
+		filePath, strings.Join(names, ", "),
+	)
+}
+
+func validateConfigFieldType(fieldPath string, field *configFieldInfo) error {
+	if field.IsList || field.IsMap {
+		return fmt.Errorf(
+			"config field %s: repeated/map fields are not supported in v0.1",
+			fieldPath,
+		)
+	}
+
+	switch field.Kind {
+	case protoreflect.BoolKind,
+		protoreflect.EnumKind,
+		protoreflect.Int32Kind,
+		protoreflect.Sint32Kind,
+		protoreflect.Sfixed32Kind,
+		protoreflect.Int64Kind,
+		protoreflect.Sint64Kind,
+		protoreflect.Sfixed64Kind,
+		protoreflect.Uint32Kind,
+		protoreflect.Fixed32Kind,
+		protoreflect.Uint64Kind,
+		protoreflect.Fixed64Kind,
+		protoreflect.FloatKind,
+		protoreflect.DoubleKind,
+		protoreflect.StringKind,
+		protoreflect.BytesKind:
+		return nil
+	case protoreflect.MessageKind, protoreflect.GroupKind:
+		return fmt.Errorf(
+			"config field %s: unsupported kind %s in v0.1",
+			fieldPath, field.Kind,
+		)
+	default:
+		return fmt.Errorf(
+			"config field %s: unsupported kind %s in v0.1",
+			fieldPath, field.Kind,
+		)
+	}
+}
+
+func validateConfigDefault(fieldPath string, field *configFieldInfo) error {
+	if _, err := parseConfigValueForValidation(field, field.Default); err != nil {
+		return fmt.Errorf(
+			"config field %s: default_string %q is invalid: %w",
+			fieldPath, field.Default, err,
+		)
+	}
+	return nil
+}
+
+func parseConfigValueForValidation(field *configFieldInfo, raw string) (any, error) {
+	switch field.Kind {
+	case protoreflect.BoolKind:
+		return config.ParseBool(raw)
+	case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
+		return config.ParseInt32(raw)
+	case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
+		return config.ParseInt64(raw)
+	case protoreflect.Uint32Kind, protoreflect.Fixed32Kind:
+		return config.ParseUint32(raw)
+	case protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
+		return config.ParseUint64(raw)
+	case protoreflect.FloatKind:
+		return config.ParseFloat32(raw)
+	case protoreflect.DoubleKind:
+		return config.ParseFloat64(raw)
+	case protoreflect.StringKind:
+		return config.ParseString(raw)
+	case protoreflect.BytesKind:
+		return config.ParseBytes(raw)
+	case protoreflect.EnumKind:
+		if v, err := strconv.ParseInt(raw, 10, 32); err == nil {
+			return int32(v), nil
+		}
+
+		mappings, err := enumCLIValues(field.EnumTypeName, field.EnumValues)
+		if err != nil {
+			return nil, err
+		}
+		enumMappings := make([]*config.EnumMapping, 0, len(mappings))
+		for _, m := range mappings {
+			enumMappings = append(enumMappings, &config.EnumMapping{
+				Name:   m.CLIValue,
+				Number: m.Number,
+			})
+		}
+		return config.ParseEnum(raw, enumMappings, field.EnumTypeName)
+	case protoreflect.MessageKind, protoreflect.GroupKind:
+		return nil, fmt.Errorf("unsupported kind %s", field.Kind)
+	default:
+		return nil, fmt.Errorf("unsupported kind %s", field.Kind)
+	}
 }
