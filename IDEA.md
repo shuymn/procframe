@@ -487,10 +487,18 @@ message CliGroupOptions {
   optional bool hidden = 4 [default = false];
 }
 
+message CliOptions {
+  optional bool enabled = 1 [default = true];
+}
+
+message WsOptions {
+  optional bool enabled = 1 [default = false]; // v0.1 では効果なし。将来 WS transport 用に予約
+}
+
 message ProcOptions {
   optional CliPath cli_path = 1; // service path に対する相対
-  optional bool cli = 2 [default = true];
-  optional bool ws = 3 [default = false]; // v0.1 では効果なし。将来 WS transport 用に予約
+  optional CliOptions cli = 2;
+  optional WsOptions ws = 3;
   optional string summary = 4;
   optional bool hidden = 5 [default = false];
 }
@@ -643,12 +651,12 @@ cli = true
 rpc Watch(PullRequestWatchRequest) returns (stream PullRequestWatchChunk) {
   option (procframe.options.v1.proc) = {
     cli_path: { segments: "watch" }
-    ws: true
+    ws: { enabled: true }
   };
 }
 ```
 
-`ws: true` は v0.1 では効果を持たない。将来 WS transport 実装時に有効になる。
+`ws: { enabled: true }` は v0.1 では効果を持たない。将来 WS transport 実装時に有効になる。
 
 ## 14.3 service root の扱い
 
@@ -1131,10 +1139,18 @@ message CliGroupOptions {
   optional bool hidden = 4 [default = false];
 }
 
+message CliOptions {
+  optional bool enabled = 1 [default = true];
+}
+
+message WsOptions {
+  optional bool enabled = 1 [default = false];
+}
+
 message ProcOptions {
   optional CliPath cli_path = 1;
-  optional bool cli = 2 [default = true];
-  optional bool ws = 3 [default = false];
+  optional CliOptions cli = 2;
+  optional WsOptions ws = 3;
   optional string summary = 4;
   optional bool hidden = 5 [default = false];
 }
@@ -1247,7 +1263,7 @@ service RepoPRService {
   rpc Watch(PullRequestWatchRequest) returns (stream PullRequestWatchChunk) {
     option (procframe.options.v1.proc) = {
       cli_path: { segments: "watch" }
-      ws: true // v0.1 では効果なし
+      ws: { enabled: true } // v0.1 では効果なし
     };
   }
 }
@@ -1263,7 +1279,7 @@ app repo --org my pr --state open watch
 ```
 
 * `list` は CLI のみ
-* `watch` は CLI 公開（`ws: true` は v0.1 では効果なし）
+* `watch` は CLI 公開（`ws: { enabled: true }` は v0.1 では効果なし）
 
 ---
 
