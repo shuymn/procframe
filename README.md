@@ -11,7 +11,7 @@ Define your config and procedures in Protocol Buffers, and `procframe` generates
 1. **Config**: env / CLI / file → merge → immutable config
 2. **Procedure**: CLI → typed request → handler → typed response
 
-The runtime provides transport-independent abstractions (`Request[T]`, `Response[T]`, `ServerStream[T]`, structured errors). A protoc plugin (`protoc-gen-procframe-go`) generates CLI command trees, flag parsers, and config loaders from your proto definitions.
+The runtime provides transport-independent abstractions (`Request[T]`, `Response[T]`, `ServerStream[T]`). Handlers return ordinary Go errors; transports map them to structured statuses at the boundary. A protoc plugin (`protoc-gen-procframe-go`) generates CLI command trees, flag parsers, and config loaders from your proto definitions.
 
 ### Key Features
 

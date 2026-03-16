@@ -12,6 +12,16 @@
     - repeated: 複数回指定 (`--tag foo --tag bar`)
     - nested message (non-bind_into): flat flag 生成なし、`--json` fallback のみ
 
+- Question: runtime error モデル
+  - Class: `risk-bearing`
+  - Resolution: `decision`
+  - Status: `resolved`
+  - Decision:
+    - handler は plain `error` を返す
+    - procframe の構造化 error は `Status` と `StatusError` で表現する
+    - transport は boundary で `ErrorMapper` により `error` を `Status` に写像する
+    - デフォルトでは mapper なし。アプリケーションが明示的に `ErrorMapper` を設定する
+
 ## Deferred Questions
 
 - Question: WS frame の正式 schema
@@ -29,7 +39,7 @@
 
 - [x] Theme: Runtime core + options.proto
   - Outcome: procframe パッケージが Go モジュールとしてコンパイル可能になり、options.proto が protoc で import 可能になる
-  - Goal: Request[T], Response[T], ServerStream[T], Meta, Error, Code 型と options.proto の提供
+  - Goal: Request[T], Response[T], ServerStream[T], Meta, Status/StatusError, Code 型と options.proto の提供
   - Must Not Break: なし (新規プロジェクト)
   - Non-goals: codegen, transport 実装, config 実装
   - Acceptance (EARS):
@@ -45,7 +55,7 @@
 - [x] Theme: Codegen + CLI unary end-to-end
   - Outcome: ユーザーが service proto を書き、protoc-gen-procframe-go を実行し、handler を実装し、CLI unary コマンドを flat flags で実行できる
   - Goal: protoc-gen-procframe-go による handler interface + CLI runner 生成、CLI unary 実行の end-to-end 動作
-  - Must Not Break: Theme 1 の public API (Request, Response, ServerStream, Meta, Error, Code)
+  - Must Not Break: Theme 1 の public API (Request, Response, ServerStream, Meta, Status/StatusError, Code)
   - Non-goals: server-stream CLI, --json 入力, schema コマンド, --output json, WS codegen, config codegen
   - Acceptance (EARS):
     - When テスト用 service proto に対して `protoc --procframe-go_out=...` を実行すると handler interface と CLI runner のコードが生成される
