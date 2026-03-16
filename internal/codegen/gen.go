@@ -78,6 +78,9 @@ func validateGenerationInputs(
 	if err := validateConfigInfo(cfgInfo, params); err != nil {
 		return err
 	}
+	if err := validateConfigCollisions(plugin, params); err != nil {
+		return err
+	}
 	return nil
 }
 

@@ -288,6 +288,120 @@ func TestValidateConfigInfo(t *testing.T) {
 	})
 }
 
+func TestValidateConfigCollisions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("cross-file env collision detected", func(t *testing.T) {
+		t.Parallel()
+
+		envSeen := map[string]string{}
+		bootstrapSeen := map[string]string{}
+
+		// Simulate first file's field
+		field1 := &configFieldInfo{
+			ProtoName: "name",
+			GoName:    "Name",
+			Kind:      protoreflect.StringKind,
+			HasEnv:    true,
+			Env:       "APP_NAME",
+		}
+		if err := validateConfigEnv("ConfigA.name", field1, envSeen); err != nil {
+			t.Fatalf("unexpected error from first file: %v", err)
+		}
+		if err := validateConfigBootstrap("ConfigA.name", field1, bootstrapSeen); err != nil {
+			t.Fatalf("unexpected error from first file: %v", err)
+		}
+
+		// Simulate second file's field with same env
+		field2 := &configFieldInfo{
+			ProtoName: "title",
+			GoName:    "Title",
+			Kind:      protoreflect.StringKind,
+			HasEnv:    true,
+			Env:       "APP_NAME",
+		}
+		err := validateConfigEnv("ConfigB.title", field2, envSeen)
+		if err == nil {
+			t.Fatal("expected cross-file env collision error")
+		}
+		if !strings.Contains(err.Error(), "duplicates") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("cross-file bootstrap collision detected", func(t *testing.T) {
+		t.Parallel()
+
+		envSeen := map[string]string{}
+		bootstrapSeen := map[string]string{}
+
+		field1 := &configFieldInfo{
+			ProtoName: "log_level",
+			GoName:    "LogLevel",
+			Kind:      protoreflect.StringKind,
+			Bootstrap: true,
+		}
+		if err := validateConfigEnv("ConfigA.log_level", field1, envSeen); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := validateConfigBootstrap("ConfigA.log_level", field1, bootstrapSeen); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		// Same flag name from different file
+		field2 := &configFieldInfo{
+			ProtoName: "log_level",
+			GoName:    "LogLevel",
+			Kind:      protoreflect.StringKind,
+			Bootstrap: true,
+		}
+		err := validateConfigBootstrap("ConfigB.log_level", field2, bootstrapSeen)
+		if err == nil {
+			t.Fatal("expected cross-file bootstrap collision error")
+		}
+		if !strings.Contains(err.Error(), "duplicates") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("no collision across files with unique names", func(t *testing.T) {
+		t.Parallel()
+
+		envSeen := map[string]string{}
+		bootstrapSeen := map[string]string{}
+
+		field1 := &configFieldInfo{
+			ProtoName: "prefix",
+			GoName:    "Prefix",
+			Kind:      protoreflect.StringKind,
+			HasEnv:    true,
+			Env:       "APP_PREFIX",
+			Bootstrap: true,
+		}
+		if err := validateConfigEnv("ConfigA.prefix", field1, envSeen); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := validateConfigBootstrap("ConfigA.prefix", field1, bootstrapSeen); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		field2 := &configFieldInfo{
+			ProtoName: "suffix",
+			GoName:    "Suffix",
+			Kind:      protoreflect.StringKind,
+			HasEnv:    true,
+			Env:       "APP_SUFFIX",
+			Bootstrap: true,
+		}
+		if err := validateConfigEnv("ConfigB.suffix", field2, envSeen); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if err := validateConfigBootstrap("ConfigB.suffix", field2, bootstrapSeen); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
 func TestErrMultipleConfigMessages(t *testing.T) {
 	t.Parallel()
 

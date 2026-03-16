@@ -245,6 +245,33 @@ func errMultipleConfigMessages(filePath string, msgs []*configMessageInfo) error
 	)
 }
 
+// validateConfigCollisions checks env var and bootstrap flag collisions
+// across all config messages in the generation request.
+func validateConfigCollisions(plugin *protogen.Plugin, params *Params) error {
+	envSeen := map[string]string{}
+	bootstrapSeen := map[string]string{}
+
+	for _, f := range plugin.Files {
+		if !f.Generate {
+			continue
+		}
+		cfgInfo, err := extractConfigInfo(f, params)
+		if err != nil || cfgInfo == nil {
+			continue
+		}
+		for _, field := range cfgInfo.Message.Fields {
+			fieldPath := cfgInfo.Message.GoName + "." + field.ProtoName
+			if err := validateConfigEnv(fieldPath, field, envSeen); err != nil {
+				return err
+			}
+			if err := validateConfigBootstrap(fieldPath, field, bootstrapSeen); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func validateConfigFieldType(fieldPath string, field *configFieldInfo) error {
 	if field.IsList || field.IsMap {
 		return fmt.Errorf(
