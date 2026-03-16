@@ -116,7 +116,7 @@ func TestValidateConfigInfo(t *testing.T) {
 		}
 	})
 
-	t.Run("reject repeated or map", func(t *testing.T) {
+	t.Run("allow complex field without scalar options", func(t *testing.T) {
 		t.Parallel()
 		cfg := &configInfo{
 			FilePath: "config.proto",
@@ -129,6 +129,40 @@ func TestValidateConfigInfo(t *testing.T) {
 						Kind:      protoreflect.StringKind,
 						IsList:    true,
 					},
+					{
+						ProtoName: "metadata",
+						GoName:    "Metadata",
+						Kind:      protoreflect.MessageKind,
+						IsMap:     true,
+					},
+					{
+						ProtoName: "nested",
+						GoName:    "Nested",
+						Kind:      protoreflect.MessageKind,
+					},
+				},
+			},
+		}
+		if err := validateConfigInfo(cfg, &Params{}); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("reject complex field with env", func(t *testing.T) {
+		t.Parallel()
+		cfg := &configInfo{
+			FilePath: "config.proto",
+			Message: &configMessageInfo{
+				GoName: "RuntimeConfig",
+				Fields: []*configFieldInfo{
+					{
+						ProtoName: "tags",
+						GoName:    "Tags",
+						Kind:      protoreflect.StringKind,
+						IsList:    true,
+						HasEnv:    true,
+						Env:       "TAGS",
+					},
 				},
 			},
 		}
@@ -136,7 +170,59 @@ func TestValidateConfigInfo(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected error")
 		}
-		if !strings.Contains(err.Error(), "repeated/map fields are not supported") {
+		if !strings.Contains(err.Error(), "cannot use env") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("reject complex field with bootstrap", func(t *testing.T) {
+		t.Parallel()
+		cfg := &configInfo{
+			FilePath: "config.proto",
+			Message: &configMessageInfo{
+				GoName: "RuntimeConfig",
+				Fields: []*configFieldInfo{
+					{
+						ProtoName: "metadata",
+						GoName:    "Metadata",
+						Kind:      protoreflect.MessageKind,
+						IsMap:     true,
+						Bootstrap: true,
+					},
+				},
+			},
+		}
+		err := validateConfigInfo(cfg, &Params{})
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "cannot use bootstrap") {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("reject complex field with default_string", func(t *testing.T) {
+		t.Parallel()
+		cfg := &configInfo{
+			FilePath: "config.proto",
+			Message: &configMessageInfo{
+				GoName: "RuntimeConfig",
+				Fields: []*configFieldInfo{
+					{
+						ProtoName:  "nested",
+						GoName:     "Nested",
+						Kind:       protoreflect.MessageKind,
+						HasDefault: true,
+						Default:    "{}",
+					},
+				},
+			},
+		}
+		err := validateConfigInfo(cfg, &Params{})
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		if !strings.Contains(err.Error(), "cannot use default_string") {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})

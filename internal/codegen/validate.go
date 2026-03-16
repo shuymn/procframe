@@ -273,42 +273,43 @@ func validateConfigCollisions(plugin *protogen.Plugin, params *Params) error {
 }
 
 func validateConfigFieldType(fieldPath string, field *configFieldInfo) error {
-	if field.IsList || field.IsMap {
+	if isComplexConfigField(field) {
+		return validateComplexConfigFieldOptions(fieldPath, field)
+	}
+	// Scalar and bytes fields are always valid.
+	return nil
+}
+
+// isComplexConfigField returns true for fields that cannot use
+// env/bootstrap/default_string (list, map, message, group).
+func isComplexConfigField(f *configFieldInfo) bool {
+	return f.IsList || f.IsMap ||
+		f.Kind == protoreflect.MessageKind ||
+		f.Kind == protoreflect.GroupKind
+}
+
+// validateComplexConfigFieldOptions ensures that complex fields do not
+// carry scalar-only options (env, bootstrap, default_string).
+func validateComplexConfigFieldOptions(fieldPath string, f *configFieldInfo) error {
+	if f.HasEnv {
 		return fmt.Errorf(
-			"config field %s: repeated/map fields are not supported in v0.1",
+			"config field %s: complex field (list/map/message) cannot use env",
 			fieldPath,
 		)
 	}
-
-	switch field.Kind {
-	case protoreflect.BoolKind,
-		protoreflect.EnumKind,
-		protoreflect.Int32Kind,
-		protoreflect.Sint32Kind,
-		protoreflect.Sfixed32Kind,
-		protoreflect.Int64Kind,
-		protoreflect.Sint64Kind,
-		protoreflect.Sfixed64Kind,
-		protoreflect.Uint32Kind,
-		protoreflect.Fixed32Kind,
-		protoreflect.Uint64Kind,
-		protoreflect.Fixed64Kind,
-		protoreflect.FloatKind,
-		protoreflect.DoubleKind,
-		protoreflect.StringKind,
-		protoreflect.BytesKind:
-		return nil
-	case protoreflect.MessageKind, protoreflect.GroupKind:
+	if f.Bootstrap {
 		return fmt.Errorf(
-			"config field %s: unsupported kind %s in v0.1",
-			fieldPath, field.Kind,
-		)
-	default:
-		return fmt.Errorf(
-			"config field %s: unsupported kind %s in v0.1",
-			fieldPath, field.Kind,
+			"config field %s: complex field (list/map/message) cannot use bootstrap",
+			fieldPath,
 		)
 	}
+	if f.HasDefault {
+		return fmt.Errorf(
+			"config field %s: complex field (list/map/message) cannot use default_string",
+			fieldPath,
+		)
+	}
+	return nil
 }
 
 func validateConfigDefault(fieldPath string, field *configFieldInfo) error {
