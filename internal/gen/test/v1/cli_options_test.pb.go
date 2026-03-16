@@ -118,14 +118,14 @@ const file_test_v1_cli_options_test_proto_rawDesc = "" +
 	"\vPingRequest\x12\x16\n" +
 	"\x06target\x18\x01 \x01(\tR\x06target\"&\n" +
 	"\fPingResponse\x12\x16\n" +
-	"\x06result\x18\x01 \x01(\tR\x06result2\x81\x04\n" +
-	"\x15CliOptionsTestService\x12k\n" +
-	"\x0eDefaultEnabled\x12\x14.test.v1.PingRequest\x1a\x15.test.v1.PingResponse\",\x92\xb2\x19(\n" +
+	"\x06result\x18\x01 \x01(\tR\x06result2\x89\x04\n" +
+	"\x15CliOptionsTestService\x12o\n" +
+	"\x0eDefaultEnabled\x12\x14.test.v1.PingRequest\x1a\x15.test.v1.PingResponse\"0\x92\xb2\x19,\n" +
 	"\x11\n" +
-	"\x0fdefault-enabled\"\x13Default CLI enabled\x12t\n" +
-	"\x0fExplicitEnabled\x12\x14.test.v1.PingRequest\x1a\x15.test.v1.PingResponse\"4\x92\xb2\x190\n" +
+	"\x0fdefault-enabled\"\x13Default CLI enabled2\x02\b\x01\x12x\n" +
+	"\x0fExplicitEnabled\x12\x14.test.v1.PingRequest\x1a\x15.test.v1.PingResponse\"8\x92\xb2\x194\n" +
 	"\x12\n" +
-	"\x10explicit-enabled\x12\x02\b\x01\"\x16Explicitly CLI enabled\x12w\n" +
+	"\x10explicit-enabled\x12\x02\b\x01\"\x16Explicitly CLI enabled2\x02\b\x01\x12w\n" +
 	"\x10ExplicitDisabled\x12\x14.test.v1.PingRequest\x1a\x15.test.v1.PingResponse\"6\x92\xb2\x192\n" +
 	"\x13\n" +
 	"\x11explicit-disabled\x12\x02\b\x00\"\x17Explicitly CLI disabled\x12i\n" +

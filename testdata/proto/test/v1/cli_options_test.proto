@@ -30,6 +30,9 @@ service CliOptionsTestService {
       cli_path: {
         segments: ["default-enabled"]
       }
+      connect: {
+        enabled: true
+      }
       summary: "Default CLI enabled"
     };
   }
@@ -41,6 +44,9 @@ service CliOptionsTestService {
         segments: ["explicit-enabled"]
       }
       cli: {
+        enabled: true
+      }
+      connect: {
         enabled: true
       }
       summary: "Explicitly CLI enabled"

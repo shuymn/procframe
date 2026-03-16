@@ -9,8 +9,10 @@ import (
 	fmt "fmt"
 	procframe "github.com/shuymn/procframe"
 	cli "github.com/shuymn/procframe/transport/cli"
+	connect "github.com/shuymn/procframe/transport/connect"
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
+	http "net/http"
 	sort "sort"
 	strings "strings"
 )
@@ -306,4 +308,22 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 		},
 	}
 	return cli.NewRunner(root, opts...)
+}
+
+// NewCliOptionsTestServiceConnectHandler constructs a Connect protocol HTTP handler for CliOptionsTestService.
+// It returns the service path prefix and a handler that routes to each
+// Connect-enabled RPC method.
+func NewCliOptionsTestServiceConnectHandler(h CliOptionsTestServiceHandler, opts ...connect.Option) (string, http.Handler) {
+	mux := http.NewServeMux()
+	mux.Handle(connect.NewUnaryHandler(
+		"/test.v1.CliOptionsTestService/DefaultEnabled",
+		h.DefaultEnabled,
+		opts...,
+	))
+	mux.Handle(connect.NewUnaryHandler(
+		"/test.v1.CliOptionsTestService/ExplicitEnabled",
+		h.ExplicitEnabled,
+		opts...,
+	))
+	return "/test.v1.CliOptionsTestService/", mux
 }

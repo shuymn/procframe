@@ -9,8 +9,10 @@ import (
 	fmt "fmt"
 	procframe "github.com/shuymn/procframe"
 	cli "github.com/shuymn/procframe/transport/cli"
+	connect "github.com/shuymn/procframe/transport/connect"
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
+	http "net/http"
 	sort "sort"
 	strings "strings"
 )
@@ -175,4 +177,17 @@ func NewEchoServiceCLIRunner(h EchoServiceHandler, opts ...cli.Option) *cli.Runn
 		},
 	}
 	return cli.NewRunner(root, opts...)
+}
+
+// NewEchoServiceConnectHandler constructs a Connect protocol HTTP handler for EchoService.
+// It returns the service path prefix and a handler that routes to each
+// Connect-enabled RPC method.
+func NewEchoServiceConnectHandler(h EchoServiceHandler, opts ...connect.Option) (string, http.Handler) {
+	mux := http.NewServeMux()
+	mux.Handle(connect.NewUnaryHandler(
+		"/test.v1.EchoService/Echo",
+		h.Echo,
+		opts...,
+	))
+	return "/test.v1.EchoService/", mux
 }

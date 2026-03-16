@@ -9,8 +9,10 @@ import (
 	fmt "fmt"
 	procframe "github.com/shuymn/procframe"
 	cli "github.com/shuymn/procframe/transport/cli"
+	connect "github.com/shuymn/procframe/transport/connect"
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
+	http "net/http"
 	sort "sort"
 	strings "strings"
 )
@@ -168,4 +170,17 @@ func NewTickServiceCLIRunner(h TickServiceHandler, opts ...cli.Option) *cli.Runn
 		},
 	}
 	return cli.NewRunner(root, opts...)
+}
+
+// NewTickServiceConnectHandler constructs a Connect protocol HTTP handler for TickService.
+// It returns the service path prefix and a handler that routes to each
+// Connect-enabled RPC method.
+func NewTickServiceConnectHandler(h TickServiceHandler, opts ...connect.Option) (string, http.Handler) {
+	mux := http.NewServeMux()
+	mux.Handle(connect.NewServerStreamHandler(
+		"/test.v1.TickService/Watch",
+		h.Watch,
+		opts...,
+	))
+	return "/test.v1.TickService/", mux
 }

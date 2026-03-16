@@ -32,6 +32,9 @@ service TickService {
       cli_path: {
         segments: ["watch"]
       }
+      connect: {
+        enabled: true
+      }
       summary: "Watch ticks"
     };
   }

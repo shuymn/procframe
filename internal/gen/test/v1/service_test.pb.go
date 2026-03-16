@@ -150,11 +150,11 @@ const file_test_v1_service_test_proto_rawDesc = "" +
 	"\x14Convert to uppercaseR\tuppercase\">\n" +
 	"\fEchoResponse\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x12\x14\n" +
-	"\x05count\x18\x02 \x01(\x05R\x05count2~\n" +
-	"\vEchoService\x12P\n" +
-	"\x04Echo\x12\x14.test.v1.EchoRequest\x1a\x15.test.v1.EchoResponse\"\x1b\x92\xb2\x19\x17\n" +
+	"\x05count\x18\x02 \x01(\x05R\x05count2\x82\x01\n" +
+	"\vEchoService\x12T\n" +
+	"\x04Echo\x12\x14.test.v1.EchoRequest\x1a\x15.test.v1.EchoResponse\"\x1f\x92\xb2\x19\x1b\n" +
 	"\x05\n" +
-	"\x03run\"\x0eEcho a message\x1a\x1d\x8a\xb2\x19\x19\n" +
+	"\x03run\"\x0eEcho a message2\x02\b\x01\x1a\x1d\x8a\xb2\x19\x19\n" +
 	"\x06\n" +
 	"\x04echo\x1a\x0fEcho operationsB9Z7github.com/shuymn/procframe/internal/gen/test/v1;testv1b\x06proto3"
 
