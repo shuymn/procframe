@@ -233,11 +233,11 @@ func emitRequestParsing(
 	g.P("\t\t\tif jsonPayload, ok := ", cliPkg.Ident("JSONPayloadFromContext"), "(ctx); ok {")
 	g.P("\t\t\t\tif len(args) > 0 {")
 	g.P(
-		"\t\t\t\t\treturn &",
-		procframePkg.Ident("Error"),
-		`{Code: `,
+		"\t\t\t\t\treturn ",
+		procframePkg.Ident("NewError"),
+		"(",
 		procframePkg.Ident("CodeInvalidArgument"),
-		`, Message: "--json cannot be combined with flags"}`,
+		`, "--json cannot be combined with flags")`,
 	)
 	g.P("\t\t\t\t}")
 	g.P("\t\t\t\treq = &", method.Input.GoIdent, "{}")
@@ -287,11 +287,11 @@ func emitHandlerCall(g *protogen.GeneratedFile, method *protogen.Method, leaf *l
 	g.P("\t\t\t}")
 	g.P("\t\t\tif resp == nil || resp.Msg == nil {")
 	g.P(
-		"\t\t\t\treturn &",
-		procframePkg.Ident("Error"),
-		"{Code: ",
+		"\t\t\t\treturn ",
+		procframePkg.Ident("NewError"),
+		"(",
 		procframePkg.Ident("CodeInternal"),
-		`, Message: "handler returned nil response"}`,
+		`, "handler returned nil response")`,
 	)
 	g.P("\t\t\t}")
 
@@ -322,11 +322,11 @@ func emitStreamingHandlerCall(g *protogen.GeneratedFile, method *protogen.Method
 	)
 	g.P("\t\t\t\tif resp == nil || resp.Msg == nil {")
 	g.P(
-		"\t\t\t\t\treturn &",
-		procframePkg.Ident("Error"),
-		"{Code: ",
+		"\t\t\t\t\treturn ",
+		procframePkg.Ident("NewError"),
+		"(",
 		procframePkg.Ident("CodeInternal"),
-		`, Message: "handler sent nil response"}`,
+		`, "handler sent nil response")`,
 	)
 	g.P("\t\t\t\t}")
 	g.P("\t\t\t\tvar out []byte")

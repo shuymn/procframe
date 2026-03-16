@@ -79,7 +79,7 @@ func (r *Runner) Run(ctx context.Context, args []string) error {
 	}
 	runErr := r.traverse(ctx, r.root, remaining, path)
 	if runErr != nil {
-		var pfErr *procframe.Error
+		var pfErr procframe.Error
 		if errors.As(runErr, &pfErr) && OutputFormatFromContext(ctx) == OutputJSON {
 			//nolint:errcheck // best-effort structured error output
 			FormatErrorJSON(r.stderr, pfErr)

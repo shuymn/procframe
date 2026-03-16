@@ -237,10 +237,7 @@ func TestRunner_NilRunDoesNotPanic(t *testing.T) {
 func TestRunner_HandlerError(t *testing.T) {
 	t.Parallel()
 
-	handlerErr := &procframe.Error{
-		Code:    procframe.CodeNotFound,
-		Message: "not found",
-	}
+	handlerErr := procframe.NewError(procframe.CodeNotFound, "not found")
 	root := &cli.Node{
 		Children: map[string]*cli.Node{
 			"get": {
@@ -256,12 +253,12 @@ func TestRunner_HandlerError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from handler")
 	}
-	var pfErr *procframe.Error
+	var pfErr procframe.Error
 	if !errors.As(err, &pfErr) {
 		t.Fatalf("expected procframe.Error, got %T: %v", err, err)
 	}
-	if pfErr.Code != procframe.CodeNotFound {
-		t.Fatalf("want CodeNotFound, got %q", pfErr.Code)
+	if pfErr.Code() != procframe.CodeNotFound {
+		t.Fatalf("want CodeNotFound, got %q", pfErr.Code())
 	}
 }
 
@@ -454,10 +451,7 @@ func TestRunner_StructuredErrorJSON(t *testing.T) {
 			"cmd": {
 				Segment: "cmd",
 				Run: func(context.Context, []string, io.Writer) error {
-					return &procframe.Error{
-						Code:    procframe.CodeNotFound,
-						Message: "missing",
-					}
+					return procframe.NewError(procframe.CodeNotFound, "missing")
 				},
 			},
 		},
@@ -481,10 +475,7 @@ func TestRunner_StructuredErrorNotWrittenWithoutOutputJSON(t *testing.T) {
 			"cmd": {
 				Segment: "cmd",
 				Run: func(context.Context, []string, io.Writer) error {
-					return &procframe.Error{
-						Code:    procframe.CodeNotFound,
-						Message: "missing",
-					}
+					return procframe.NewError(procframe.CodeNotFound, "missing")
 				},
 			},
 		},

@@ -27,9 +27,9 @@ func (h *handler) Echo(
 func main() {
 	runner := echov1.NewEchoServiceCLIRunner(&handler{})
 	if err := runner.Run(context.Background(), os.Args[1:]); err != nil {
-		var pfErr *procframe.Error
+		var pfErr procframe.Error
 		if errors.As(err, &pfErr) {
-			os.Exit(cli.ExitCode(pfErr.Code))
+			os.Exit(cli.ExitCode(pfErr.Code()))
 		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

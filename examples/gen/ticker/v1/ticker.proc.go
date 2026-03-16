@@ -34,7 +34,7 @@ func NewTickerServiceCLIRunner(h TickerServiceHandler, opts ...cli.Option) *cli.
 			var req *TickRequest
 			if jsonPayload, ok := cli.JSONPayloadFromContext(ctx); ok {
 				if len(args) > 0 {
-					return &procframe.Error{Code: procframe.CodeInvalidArgument, Message: "--json cannot be combined with flags"}
+					return procframe.NewError(procframe.CodeInvalidArgument, "--json cannot be combined with flags")
 				}
 				req = &TickRequest{}
 				if err := protojson.Unmarshal([]byte(jsonPayload), req); err != nil {
@@ -57,7 +57,7 @@ func NewTickerServiceCLIRunner(h TickerServiceHandler, opts ...cli.Option) *cli.
 			}
 			stream := cli.NewStreamWriter[TickResponse](ctx, func(resp *procframe.Response[TickResponse]) error {
 				if resp == nil || resp.Msg == nil {
-					return &procframe.Error{Code: procframe.CodeInternal, Message: "handler sent nil response"}
+					return procframe.NewError(procframe.CodeInternal, "handler sent nil response")
 				}
 				var out []byte
 				var err error

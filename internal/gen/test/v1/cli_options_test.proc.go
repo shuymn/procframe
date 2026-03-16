@@ -45,7 +45,7 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 			var req *PingRequest
 			if jsonPayload, ok := cli.JSONPayloadFromContext(ctx); ok {
 				if len(args) > 0 {
-					return &procframe.Error{Code: procframe.CodeInvalidArgument, Message: "--json cannot be combined with flags"}
+					return procframe.NewError(procframe.CodeInvalidArgument, "--json cannot be combined with flags")
 				}
 				req = &PingRequest{}
 				if err := protojson.Unmarshal([]byte(jsonPayload), req); err != nil {
@@ -71,7 +71,7 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 				return err
 			}
 			if resp == nil || resp.Msg == nil {
-				return &procframe.Error{Code: procframe.CodeInternal, Message: "handler returned nil response"}
+				return procframe.NewError(procframe.CodeInternal, "handler returned nil response")
 			}
 			var out []byte
 			if cli.OutputFormatFromContext(ctx) == cli.OutputJSON {
@@ -93,7 +93,7 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 			var req *PingRequest
 			if jsonPayload, ok := cli.JSONPayloadFromContext(ctx); ok {
 				if len(args) > 0 {
-					return &procframe.Error{Code: procframe.CodeInvalidArgument, Message: "--json cannot be combined with flags"}
+					return procframe.NewError(procframe.CodeInvalidArgument, "--json cannot be combined with flags")
 				}
 				req = &PingRequest{}
 				if err := protojson.Unmarshal([]byte(jsonPayload), req); err != nil {
@@ -119,7 +119,7 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 				return err
 			}
 			if resp == nil || resp.Msg == nil {
-				return &procframe.Error{Code: procframe.CodeInternal, Message: "handler returned nil response"}
+				return procframe.NewError(procframe.CodeInternal, "handler returned nil response")
 			}
 			var out []byte
 			if cli.OutputFormatFromContext(ctx) == cli.OutputJSON {
@@ -141,7 +141,7 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 			var req *PingRequest
 			if jsonPayload, ok := cli.JSONPayloadFromContext(ctx); ok {
 				if len(args) > 0 {
-					return &procframe.Error{Code: procframe.CodeInvalidArgument, Message: "--json cannot be combined with flags"}
+					return procframe.NewError(procframe.CodeInvalidArgument, "--json cannot be combined with flags")
 				}
 				req = &PingRequest{}
 				if err := protojson.Unmarshal([]byte(jsonPayload), req); err != nil {
@@ -167,7 +167,7 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 				return err
 			}
 			if resp == nil || resp.Msg == nil {
-				return &procframe.Error{Code: procframe.CodeInternal, Message: "handler returned nil response"}
+				return procframe.NewError(procframe.CodeInternal, "handler returned nil response")
 			}
 			var out []byte
 			if cli.OutputFormatFromContext(ctx) == cli.OutputJSON {

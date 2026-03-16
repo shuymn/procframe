@@ -44,7 +44,7 @@ func TestStreamWriter_SendCallsWrite(t *testing.T) {
 func TestStreamWriter_SendPropagatesError(t *testing.T) {
 	t.Parallel()
 
-	want := &procframe.Error{Code: procframe.CodeInternal, Message: "boom"}
+	want := procframe.NewError(procframe.CodeInternal, "boom")
 	sw := cli.NewStreamWriter[string](t.Context(), func(_ *procframe.Response[string]) error {
 		return want
 	})
