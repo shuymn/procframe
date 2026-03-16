@@ -41,6 +41,9 @@ func Generate(plugin *protogen.Plugin, file *protogen.File, params *Params) erro
 		if hasCliMethods(svcInfo) {
 			generateCLI(g, svc, svcInfo, tree)
 		}
+		if hasConnectMethods(svcInfo) {
+			generateConnect(g, svc, svcInfo)
+		}
 	}
 
 	return nil

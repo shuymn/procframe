@@ -89,6 +89,9 @@ func applyMethodOptions(info *methodInfo, m *protogen.Method) {
 	if proc.Cli != nil {
 		info.CLI = proc.Cli.GetEnabled()
 	}
+	if proc.Connect != nil {
+		info.Connect = proc.Connect.GetEnabled()
+	}
 	if proc.Summary != nil {
 		info.Summary = *proc.Summary
 	}

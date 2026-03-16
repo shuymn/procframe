@@ -119,6 +119,7 @@ type methodInfo struct {
 	GoName       string
 	Path         []string // from proc.cli_path segments
 	CLI          bool
+	Connect      bool
 	Summary      string
 	Hidden       bool
 	InputGoName  string
