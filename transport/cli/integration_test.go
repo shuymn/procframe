@@ -779,3 +779,45 @@ func TestIntegration_SchemaContainsDescription(t *testing.T) {
 		}
 	}
 }
+
+func BenchmarkSchemaList(b *testing.B) {
+	var stdout, stderr bytes.Buffer
+	runner := testv1.NewEchoServiceCLIRunner(
+		&echoHandler{},
+		cli.WithStdout(&stdout),
+		cli.WithStderr(&stderr),
+	)
+
+	args := []string{"schema"}
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for range b.N {
+		stdout.Reset()
+		stderr.Reset()
+		if err := runner.Run(b.Context(), args); err != nil {
+			b.Fatalf("unexpected error: %v", err)
+		}
+	}
+}
+
+func BenchmarkSchemaLookupByProcedure(b *testing.B) {
+	var stdout, stderr bytes.Buffer
+	runner := testv1.NewEchoServiceCLIRunner(
+		&echoHandler{},
+		cli.WithStdout(&stdout),
+		cli.WithStderr(&stderr),
+	)
+
+	args := []string{"schema", "/test.v1.EchoService/Echo"}
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for range b.N {
+		stdout.Reset()
+		stderr.Reset()
+		if err := runner.Run(b.Context(), args); err != nil {
+			b.Fatalf("unexpected error: %v", err)
+		}
+	}
+}
