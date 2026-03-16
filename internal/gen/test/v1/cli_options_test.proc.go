@@ -10,6 +10,7 @@ import (
 	procframe "github.com/shuymn/procframe"
 	cli "github.com/shuymn/procframe/transport/cli"
 	connect "github.com/shuymn/procframe/transport/connect"
+	ws "github.com/shuymn/procframe/transport/ws"
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
 	http "net/http"
@@ -326,4 +327,11 @@ func NewCliOptionsTestServiceConnectHandler(h CliOptionsTestServiceHandler, opts
 		opts...,
 	))
 	return "/test.v1.CliOptionsTestService/", mux
+}
+
+// NewCliOptionsTestServiceWSHandler registers WebSocket RPC handlers for CliOptionsTestService.
+// The handlers are registered on the given Server, which can be shared
+// across multiple services.
+func NewCliOptionsTestServiceWSHandler(s *ws.Server, h CliOptionsTestServiceHandler) {
+	ws.HandleUnary(s, "/test.v1.CliOptionsTestService/WsEnabled", h.WsEnabled)
 }

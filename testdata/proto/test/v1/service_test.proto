@@ -36,6 +36,9 @@ service EchoService {
       connect: {
         enabled: true
       }
+      ws: {
+        enabled: true
+      }
       summary: "Echo a message"
     };
   }

@@ -10,6 +10,7 @@ import (
 	procframe "github.com/shuymn/procframe"
 	cli "github.com/shuymn/procframe/transport/cli"
 	connect "github.com/shuymn/procframe/transport/connect"
+	ws "github.com/shuymn/procframe/transport/ws"
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
 	http "net/http"
@@ -183,4 +184,11 @@ func NewTickServiceConnectHandler(h TickServiceHandler, opts ...connect.Option) 
 		opts...,
 	))
 	return "/test.v1.TickService/", mux
+}
+
+// NewTickServiceWSHandler registers WebSocket RPC handlers for TickService.
+// The handlers are registered on the given Server, which can be shared
+// across multiple services.
+func NewTickServiceWSHandler(s *ws.Server, h TickServiceHandler) {
+	ws.HandleServerStream(s, "/test.v1.TickService/Watch", h.Watch)
 }

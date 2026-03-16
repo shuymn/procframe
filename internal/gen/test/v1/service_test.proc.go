@@ -10,6 +10,7 @@ import (
 	procframe "github.com/shuymn/procframe"
 	cli "github.com/shuymn/procframe/transport/cli"
 	connect "github.com/shuymn/procframe/transport/connect"
+	ws "github.com/shuymn/procframe/transport/ws"
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
 	http "net/http"
@@ -190,4 +191,11 @@ func NewEchoServiceConnectHandler(h EchoServiceHandler, opts ...connect.Option) 
 		opts...,
 	))
 	return "/test.v1.EchoService/", mux
+}
+
+// NewEchoServiceWSHandler registers WebSocket RPC handlers for EchoService.
+// The handlers are registered on the given Server, which can be shared
+// across multiple services.
+func NewEchoServiceWSHandler(s *ws.Server, h EchoServiceHandler) {
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo", h.Echo)
 }

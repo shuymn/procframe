@@ -140,11 +140,11 @@ const file_test_v1_stream_test_proto_rawDesc = "" +
 	"\x17Number of ticks to emitR\x05count\"6\n" +
 	"\fTickResponse\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12\x10\n" +
-	"\x03seq\x18\x02 \x01(\x05R\x03seq2\x84\x01\n" +
-	"\vTickService\x12V\n" +
-	"\x05Watch\x12\x14.test.v1.TickRequest\x1a\x15.test.v1.TickResponse\"\x1e\x92\xb2\x19\x1a\n" +
+	"\x03seq\x18\x02 \x01(\x05R\x03seq2\x88\x01\n" +
+	"\vTickService\x12Z\n" +
+	"\x05Watch\x12\x14.test.v1.TickRequest\x1a\x15.test.v1.TickResponse\"\"\x92\xb2\x19\x1e\n" +
 	"\a\n" +
-	"\x05watch\"\vWatch ticks2\x02\b\x010\x01\x1a\x1d\x8a\xb2\x19\x19\n" +
+	"\x05watch\x1a\x02\b\x01\"\vWatch ticks2\x02\b\x010\x01\x1a\x1d\x8a\xb2\x19\x19\n" +
 	"\x06\n" +
 	"\x04tick\x1a\x0fTick operationsB9Z7github.com/shuymn/procframe/internal/gen/test/v1;testv1b\x06proto3"
 

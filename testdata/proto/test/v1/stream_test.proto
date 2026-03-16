@@ -35,6 +35,9 @@ service TickService {
       connect: {
         enabled: true
       }
+      ws: {
+        enabled: true
+      }
       summary: "Watch ticks"
     };
   }
