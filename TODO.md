@@ -63,3 +63,20 @@
   - Executable doc: TestIntegration_HelpShowsFieldDescriptions, TestIntegration_HelpShowsEnumValues, TestIntegration_SchemaContainsDescription
   - Why not split vertically further?: 全メタデータ伝播は同一の codegen パス (field descriptor → flag registration + schema struct) を共有し、出力面も help text + schema JSON の2つだけ。メタデータ種別で分割すると同じコードパスを複数回変更することになる。
   - Escalate if: protogen API が proto ソースコメントの取得を十分にサポートしていない場合
+
+- [x] Theme: CLI schema メタデータ静的化
+  - Outcome: generated CLI の `schema` 実行時に不変メタデータ再構築と runtime sort が発生しない
+  - Goal: generator が schema 用データをサービス単位の静的変数として出力し、lookup/list 両方で再利用する
+  - Must Not Break: `schema` JSON の形、command path lookup、procedure lookup、出力順、既存 integration test
+  - Non-goals: `fmt.Fprintln(stdout, string(out))` 最適化、他の CLI 実行パス最適化、help/system/connect/WS 変更
+  - Acceptance (EARS):
+    - When a generated CLI runner serves the `schema` subcommand, it shall read from pre-generated service-level schema variables instead of rebuilding the metadata map at runtime
+    - When `schema` is invoked without args, it shall return the same command list in command-path order as before
+    - When `schema` is invoked with a command path, it shall return the same command metadata as before
+    - When `schema` is invoked with a procedure path, it shall return the same command metadata as before
+    - When schema benchmarks are replayed, allocs/op shall be lower than the pre-change baseline for both list and procedure lookup
+  - Evidence: `run=task check && go test -run '^$' -bench 'BenchmarkSchema(List|LookupByProcedure)$' -benchmem ./transport/cli; oracle=schema integration tests keep behavior unchanged and benchmarks show lower allocs/op than the pre-change baseline (list: 12 allocs/op, lookup: 10 allocs/op); visibility=implementation-visible; controls=[]; missing=[agent,context]; companion=independent AI review of the current diff confirms no schema contract regression or additional blocker beyond trust metadata`
+  - Gates: `static`, `integration`, `benchmark`
+  - Executable doc: `TestIntegration_Schema`, `TestIntegration_SchemaSpecificCommand`, `TestIntegration_SchemaFallbackByProcedure`, `TestIntegration_SchemaStreamingFlag`, `TestIntegration_SchemaContainsDescription`, `BenchmarkSchemaList`, `BenchmarkSchemaLookupByProcedure`
+  - Why not split vertically further?: schema list と lookup は同一の generated metadata source を共有しており、片方だけ静的化しても runtime map 再構築を除去したとは言えないため
+  - Escalate if: service-level schema metadata を静的変数として生成すると Go の初期化順や generated file size の制約により既存 codegen が安全にコンパイルできなくなる場合
