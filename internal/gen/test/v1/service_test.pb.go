@@ -140,11 +140,14 @@ var File_test_v1_service_test_proto protoreflect.FileDescriptor
 
 const file_test_v1_service_test_proto_rawDesc = "" +
 	"\n" +
-	"\x1atest/v1/service_test.proto\x12\atest.v1\x1a\"procframe/options/v1/options.proto\"[\n" +
-	"\vEchoRequest\x12\x18\n" +
-	"\amessage\x18\x01 \x01(\tR\amessage\x12\x14\n" +
-	"\x05count\x18\x02 \x01(\x05R\x05count\x12\x1c\n" +
-	"\tuppercase\x18\x03 \x01(\bR\tuppercase\">\n" +
+	"\x1atest/v1/service_test.proto\x12\atest.v1\x1a\"procframe/options/v1/options.proto\"\xb8\x01\n" +
+	"\vEchoRequest\x128\n" +
+	"\amessage\x18\x01 \x01(\tB\x1e\xd2\xf3\x18\x1a\n" +
+	"\x18The message to echo backR\amessage\x125\n" +
+	"\x05count\x18\x02 \x01(\x05B\x1f\xd2\xf3\x18\x1b\n" +
+	"\x19Number of times to repeatR\x05count\x128\n" +
+	"\tuppercase\x18\x03 \x01(\bB\x1a\xd2\xf3\x18\x16\n" +
+	"\x14Convert to uppercaseR\tuppercase\">\n" +
 	"\fEchoResponse\x12\x18\n" +
 	"\amessage\x18\x01 \x01(\tR\amessage\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x05R\x05count2~\n" +

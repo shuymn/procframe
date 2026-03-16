@@ -199,3 +199,16 @@ func getConfigFieldOptions(field *protogen.Field) (*procframeoptionsv1.ConfigFie
 	}
 	return cfgOpt, true
 }
+
+func getFieldDescription(field *protogen.Field) string {
+	opts := field.Desc.Options()
+	if opts == nil {
+		return ""
+	}
+	ext := proto.GetExtension(opts, procframeoptionsv1.E_Field)
+	fieldOpt, ok := ext.(*procframeoptionsv1.FieldOptions)
+	if !ok || fieldOpt == nil {
+		return ""
+	}
+	return fieldOpt.GetDescription()
+}

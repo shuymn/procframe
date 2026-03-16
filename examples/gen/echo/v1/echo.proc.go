@@ -73,6 +73,11 @@ func NewEchoServiceCLIRunner(h EchoServiceHandler, opts ...cli.Option) *cli.Runn
 			fmt.Fprintln(stdout, string(out))
 			return nil
 		},
+		HelpFlags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("", flag.ContinueOnError)
+			fs.String("message", "", "")
+			return fs
+		},
 	}
 	node_echo := &cli.Node{
 		Segment: "echo",

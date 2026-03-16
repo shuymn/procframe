@@ -77,6 +77,12 @@ func NewTickerServiceCLIRunner(h TickerServiceHandler, opts ...cli.Option) *cli.
 				Meta: procframe.Meta{Procedure: "/ticker.v1.TickerService/Tick"},
 			}, stream)
 		},
+		HelpFlags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("", flag.ContinueOnError)
+			fs.String("prefix", "", "")
+			fs.Var(cli.NewInt32Value(nil), "count", "")
+			return fs
+		},
 	}
 	node_ticker := &cli.Node{
 		Segment: "ticker",

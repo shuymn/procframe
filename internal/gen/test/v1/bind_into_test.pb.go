@@ -330,19 +330,22 @@ var File_test_v1_bind_into_test_proto protoreflect.FileDescriptor
 
 const file_test_v1_bind_into_test_proto_rawDesc = "" +
 	"\n" +
-	"\x1ctest/v1/bind_into_test.proto\x12\atest.v1\x1a\"procframe/options/v1/options.proto\"\x1d\n" +
-	"\tRepoScope\x12\x10\n" +
-	"\x03org\x18\x01 \x01(\tR\x03org\"\x1d\n" +
+	"\x1ctest/v1/bind_into_test.proto\x12\atest.v1\x1a\"procframe/options/v1/options.proto\"6\n" +
+	"\tRepoScope\x12)\n" +
+	"\x03org\x18\x01 \x01(\tB\x17\xd2\xf3\x18\x13\n" +
+	"\x11Organization nameR\x03org\"\x1d\n" +
 	"\aPRLabel\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"\x80\x01\n" +
-	"\aPRScope\x12&\n" +
-	"\x05state\x18\x01 \x01(\x0e2\x10.test.v1.PRStateR\x05state\x12\x16\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"\x9a\x01\n" +
+	"\aPRScope\x12@\n" +
+	"\x05state\x18\x01 \x01(\x0e2\x10.test.v1.PRStateB\x18\xd2\xf3\x18\x14\n" +
+	"\x12Filter by PR stateR\x05state\x12\x16\n" +
 	"\x06labels\x18\x02 \x03(\tR\x06labels\x125\n" +
-	"\rprimary_label\x18\x03 \x01(\v2\x10.test.v1.PRLabelR\fprimaryLabel\"o\n" +
+	"\rprimary_label\x18\x03 \x01(\v2\x10.test.v1.PRLabelR\fprimaryLabel\"\x90\x01\n" +
 	"\rPRListRequest\x12&\n" +
 	"\x04repo\x18\x01 \x01(\v2\x12.test.v1.RepoScopeR\x04repo\x12 \n" +
-	"\x02pr\x18\x02 \x01(\v2\x10.test.v1.PRScopeR\x02pr\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\x05R\x05limit\"&\n" +
+	"\x02pr\x18\x02 \x01(\v2\x10.test.v1.PRScopeR\x02pr\x125\n" +
+	"\x05limit\x18\x03 \x01(\x05B\x1f\xd2\xf3\x18\x1b\n" +
+	"\x19Maximum number of resultsR\x05limit\"&\n" +
 	"\x0ePRListResponse\x12\x14\n" +
 	"\x05items\x18\x01 \x03(\tR\x05items*K\n" +
 	"\aPRState\x12\x18\n" +

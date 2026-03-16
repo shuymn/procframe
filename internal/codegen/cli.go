@@ -219,7 +219,82 @@ func emitLeafDecl(g *protogen.GeneratedFile, d nodeDecl, svc *protogen.Service, 
 	}
 
 	g.P("\t\t},")
+
+	// HelpFlags factory for help display
+	emitHelpFlags(g, method.Input)
+
 	g.P("\t}")
+}
+
+// emitHelpFlags emits a HelpFlags factory function on the node
+// that returns a FlagSet with flag definitions for help display.
+func emitHelpFlags(g *protogen.GeneratedFile, msg *protogen.Message) {
+	g.P("\t\tHelpFlags: func() *", flagPkg.Ident("FlagSet"), " {")
+	g.P(
+		"\t\t\tfs := ",
+		flagPkg.Ident("NewFlagSet"),
+		`("", `,
+		flagPkg.Ident("ContinueOnError"),
+		")",
+	)
+	for _, field := range msg.Fields {
+		emitHelpFlagReg(g, field, "\t\t\t")
+	}
+	g.P("\t\t\treturn fs")
+	g.P("\t\t},")
+}
+
+// emitHelpFlagReg registers a single flag on the help FlagSet.
+// Uses the same names/types/usage as the real flags but without variable bindings.
+func emitHelpFlagReg(g *protogen.GeneratedFile, field *protogen.Field, indent string) {
+	usage := fieldUsage(field)
+	flagName := fieldToFlagName(string(field.Desc.Name()))
+	qName := fmt.Sprintf("%q", flagName)
+	qUsage := fmt.Sprintf("%q", usage)
+
+	if field.Desc.IsList() && field.Desc.Kind() == protoreflect.StringKind {
+		g.P(
+			indent, "fs.Var(",
+			cliPkg.Ident("NewStringSliceValue"),
+			"(nil), ", qName, ", ", qUsage, ")",
+		)
+		return
+	}
+
+	if field.Desc.Kind() == protoreflect.EnumKind {
+		typeName := string(field.Enum.Desc.Name())
+		g.P(
+			indent, "fs.Var(",
+			cliPkg.Ident("NewEnumValue"),
+			"(nil, []", cliPkg.Ident("EnumMapping"), "{",
+		)
+		emitEnumMappingEntries(g, field.Enum, indent)
+		g.P(
+			indent, "}, ",
+			fmt.Sprintf("%q", typeName),
+			"), ", qName, ", ", qUsage, ")",
+		)
+		return
+	}
+
+	ti := resolveFieldType(field)
+	if ti == nil {
+		return
+	}
+
+	if ti.stdFlagFunc != "" {
+		stdFunc := strings.TrimSuffix(ti.stdFlagFunc, "Var")
+		g.P(
+			indent, "fs.", stdFunc, "(",
+			qName, ", ", ti.defaultVal, ", ", qUsage, ")",
+		)
+	} else {
+		g.P(
+			indent, "fs.Var(",
+			cliPkg.Ident(ti.constructor),
+			"(nil), ", qName, ", ", qUsage, ")",
+		)
+	}
 }
 
 // emitRequestParsing emits the --json / flag parsing branching.
@@ -364,17 +439,35 @@ func emitFlagVars(g *protogen.GeneratedFile, msg *protogen.Message, indent strin
 	}
 }
 
+// fieldUsage builds a flag usage string from the field's description option
+// and, for enum fields, appends allowed values.
+func fieldUsage(field *protogen.Field) string {
+	var parts []string
+	if desc := getFieldDescription(field); desc != "" {
+		parts = append(parts, desc)
+	}
+	if field.Desc.Kind() == protoreflect.EnumKind {
+		values := enumCLIValuesForSchema(field.Enum)
+		if len(values) > 0 {
+			parts = append(parts, "(values: "+strings.Join(values, ", ")+")")
+		}
+	}
+	return strings.Join(parts, " ")
+}
+
 func emitFlagVar(g *protogen.GeneratedFile, field *protogen.Field, indent string) {
+	usage := fieldUsage(field)
+
 	if field.Desc.IsList() && field.Desc.Kind() == protoreflect.StringKind {
 		name := fieldToFlagName(string(field.Desc.Name()))
 		varName := "flag_" + string(field.Desc.Name())
 		g.P(indent, "var ", varName, " []string")
-		emitFsVar(g, indent, "NewStringSliceValue", varName, name)
+		emitFsVar(g, indent, "NewStringSliceValue", varName, name, usage)
 		return
 	}
 
 	if field.Desc.Kind() == protoreflect.EnumKind {
-		emitEnumFlagVar(g, field, indent)
+		emitEnumFlagVar(g, field, indent, usage)
 		return
 	}
 
@@ -386,11 +479,22 @@ func emitFlagVar(g *protogen.GeneratedFile, field *protogen.Field, indent string
 	name := fieldToFlagName(string(field.Desc.Name()))
 	varName := "flag_" + string(field.Desc.Name())
 	g.P(indent, "var ", varName, " ", ti.goType)
-	emitFlagReg(g, indent, ti, varName, name)
+	emitFlagReg(g, indent, ti, varName, name, usage)
 }
 
-func emitFsVar(g *protogen.GeneratedFile, indent, constructor, varName, flagName string) {
-	g.P(indent, "fs.Var(", cliPkg.Ident(constructor), "(&", varName, "), ", fmt.Sprintf("%q", flagName), ", \"\")")
+func emitFsVar(g *protogen.GeneratedFile, indent, constructor, varName, flagName, usage string) {
+	g.P(
+		indent,
+		"fs.Var(",
+		cliPkg.Ident(constructor),
+		"(&",
+		varName,
+		"), ",
+		fmt.Sprintf("%q", flagName),
+		", ",
+		fmt.Sprintf("%q", usage),
+		")",
+	)
 }
 
 // fieldTypeInfo maps a protobuf field kind to Go type and flag registration info.
@@ -426,7 +530,7 @@ func resolveFieldType(field *protogen.Field) *fieldTypeInfo {
 	}
 }
 
-func emitFlagReg(g *protogen.GeneratedFile, indent string, ti *fieldTypeInfo, varName, flagName string) {
+func emitFlagReg(g *protogen.GeneratedFile, indent string, ti *fieldTypeInfo, varName, flagName, usage string) {
 	if ti.stdFlagFunc != "" {
 		g.P(
 			indent,
@@ -438,14 +542,16 @@ func emitFlagReg(g *protogen.GeneratedFile, indent string, ti *fieldTypeInfo, va
 			fmt.Sprintf("%q", flagName),
 			", ",
 			ti.defaultVal,
-			", \"\")",
+			", ",
+			fmt.Sprintf("%q", usage),
+			")",
 		)
 	} else {
-		emitFsVar(g, indent, ti.constructor, varName, flagName)
+		emitFsVar(g, indent, ti.constructor, varName, flagName, usage)
 	}
 }
 
-func emitEnumFlagVar(g *protogen.GeneratedFile, field *protogen.Field, indent string) {
+func emitEnumFlagVar(g *protogen.GeneratedFile, field *protogen.Field, indent, usage string) {
 	name := fieldToFlagName(string(field.Desc.Name()))
 	varName := "flag_" + string(field.Desc.Name())
 	typeName := string(field.Enum.Desc.Name())
@@ -453,22 +559,15 @@ func emitEnumFlagVar(g *protogen.GeneratedFile, field *protogen.Field, indent st
 	g.P(indent, "var ", varName, " int32")
 	g.P(indent, "fs.Var(", cliPkg.Ident("NewEnumValue"), "(&", varName, ", []", cliPkg.Ident("EnumMapping"), "{")
 	emitEnumMappingEntries(g, field.Enum, indent)
-	g.P(indent, "}, ", fmt.Sprintf("%q", typeName), "), ", fmt.Sprintf("%q", name), ", \"\")")
+	g.P(indent, "}, ", fmt.Sprintf("%q", typeName), "), ", fmt.Sprintf("%q", name), ", ", fmt.Sprintf("%q", usage), ")")
 }
 
 // emitEnumMappingEntries emits []cli.EnumMapping literal entries
 // using enumCLIValues to ensure consistent transform with validation.
 func emitEnumMappingEntries(g *protogen.GeneratedFile, enumType *protogen.Enum, indent string) {
-	values := make([]*enumValueInfo, 0, len(enumType.Values))
-	for _, v := range enumType.Values {
-		values = append(values, &enumValueInfo{
-			ProtoName: string(v.Desc.Name()),
-			Number:    int32(v.Desc.Number()),
-		})
-	}
 	// enumCLIValues error is impossible here: validateEnumCollisions
 	// already ran.
-	mappings, err := enumCLIValues(string(enumType.Desc.Name()), values)
+	mappings, err := enumCLIValues(string(enumType.Desc.Name()), extractEnumValueInfos(enumType))
 	if err != nil {
 		return
 	}
@@ -613,13 +712,14 @@ func emitBindIntoFlagReg(
 	field *protogen.Field,
 	varName, flagName, indent string,
 ) {
+	usage := fieldUsage(field)
 	if field.Desc.Kind() == protoreflect.EnumKind {
-		emitEnumFlagReg(g, field, varName, flagName, indent)
+		emitEnumFlagReg(g, field, varName, flagName, indent, usage)
 		return
 	}
 	ti := resolveFieldType(field)
 	if ti != nil {
-		emitFlagReg(g, indent, ti, varName, flagName)
+		emitFlagReg(g, indent, ti, varName, flagName, usage)
 	}
 }
 
@@ -628,13 +728,22 @@ func emitBindIntoFlagReg(
 func emitEnumFlagReg(
 	g *protogen.GeneratedFile,
 	field *protogen.Field,
-	varName, flagName, indent string,
+	varName, flagName, indent, usage string,
 ) {
 	typeName := string(field.Enum.Desc.Name())
 
 	g.P(indent, "fs.Var(", cliPkg.Ident("NewEnumValue"), "(&", varName, ", []", cliPkg.Ident("EnumMapping"), "{")
 	emitEnumMappingEntries(g, field.Enum, indent)
-	g.P(indent, "}, ", fmt.Sprintf("%q", typeName), "), ", fmt.Sprintf("%q", flagName), ", \"\")")
+	g.P(
+		indent,
+		"}, ",
+		fmt.Sprintf("%q", typeName),
+		"), ",
+		fmt.Sprintf("%q", flagName),
+		", ",
+		fmt.Sprintf("%q", usage),
+		")",
+	)
 }
 
 // emitBindIntoFieldConstruction emits the bind_into message field
@@ -777,6 +886,9 @@ func emitSchemaFields(
 		g.P(indent, "\t{")
 		g.P(indent, "\t\tName: ", fmt.Sprintf("%q", string(field.Desc.Name())), ",")
 		g.P(indent, "\t\tType: ", fmt.Sprintf("%q", schemaFieldType(field)), ",")
+		if desc := getFieldDescription(field); desc != "" {
+			g.P(indent, "\t\tDescription: ", fmt.Sprintf("%q", desc), ",")
+		}
 		if field.Desc.IsList() {
 			g.P(indent, "\t\tRepeated: true,")
 		}
@@ -830,14 +942,7 @@ func schemaFieldType(field *protogen.Field) string {
 // enumCLIValuesForSchema returns the CLI value names for an enum type,
 // excluding the UNSPECIFIED (0) value.
 func enumCLIValuesForSchema(enumType *protogen.Enum) []string {
-	values := make([]*enumValueInfo, 0, len(enumType.Values))
-	for _, v := range enumType.Values {
-		values = append(values, &enumValueInfo{
-			ProtoName: string(v.Desc.Name()),
-			Number:    int32(v.Desc.Number()),
-		})
-	}
-	mappings, err := enumCLIValues(string(enumType.Desc.Name()), values)
+	mappings, err := enumCLIValues(string(enumType.Desc.Name()), extractEnumValueInfos(enumType))
 	if err != nil {
 		return nil
 	}

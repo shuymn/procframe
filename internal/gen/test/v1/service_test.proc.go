@@ -43,11 +43,11 @@ func NewEchoServiceCLIRunner(h EchoServiceHandler, opts ...cli.Option) *cli.Runn
 				fs := flag.NewFlagSet("run", flag.ContinueOnError)
 				fs.SetOutput(io.Discard)
 				var flag_message string
-				fs.StringVar(&flag_message, "message", "", "")
+				fs.StringVar(&flag_message, "message", "", "The message to echo back")
 				var flag_count int32
-				fs.Var(cli.NewInt32Value(&flag_count), "count", "")
+				fs.Var(cli.NewInt32Value(&flag_count), "count", "Number of times to repeat")
 				var flag_uppercase bool
-				fs.BoolVar(&flag_uppercase, "uppercase", false, "")
+				fs.BoolVar(&flag_uppercase, "uppercase", false, "Convert to uppercase")
 				if err := fs.Parse(args); err != nil {
 					return err
 				}
@@ -79,6 +79,13 @@ func NewEchoServiceCLIRunner(h EchoServiceHandler, opts ...cli.Option) *cli.Runn
 			fmt.Fprintln(stdout, string(out))
 			return nil
 		},
+		HelpFlags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("", flag.ContinueOnError)
+			fs.String("message", "", "The message to echo back")
+			fs.Var(cli.NewInt32Value(nil), "count", "Number of times to repeat")
+			fs.Bool("uppercase", false, "Convert to uppercase")
+			return fs
+		},
 	}
 	node_echo := &cli.Node{
 		Segment: "echo",
@@ -103,16 +110,19 @@ func NewEchoServiceCLIRunner(h EchoServiceHandler, opts ...cli.Option) *cli.Runn
 					Procedure: "/test.v1.EchoService/Echo",
 					Flags: []cli.SchemaField{
 						{
-							Name: "message",
-							Type: "string",
+							Name:        "message",
+							Type:        "string",
+							Description: "The message to echo back",
 						},
 						{
-							Name: "count",
-							Type: "int32",
+							Name:        "count",
+							Type:        "int32",
+							Description: "Number of times to repeat",
 						},
 						{
-							Name: "uppercase",
-							Type: "bool",
+							Name:        "uppercase",
+							Type:        "bool",
+							Description: "Convert to uppercase",
 						},
 					},
 					Output: []cli.SchemaField{

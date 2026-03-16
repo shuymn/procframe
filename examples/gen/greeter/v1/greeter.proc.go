@@ -73,6 +73,11 @@ func NewGreeterServiceCLIRunner(h GreeterServiceHandler, opts ...cli.Option) *cl
 			fmt.Fprintln(stdout, string(out))
 			return nil
 		},
+		HelpFlags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("", flag.ContinueOnError)
+			fs.String("name", "", "")
+			return fs
+		},
 	}
 	node_greet := &cli.Node{
 		Segment: "greet",

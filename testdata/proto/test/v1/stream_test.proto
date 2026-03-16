@@ -8,8 +8,8 @@ option go_package = "github.com/shuymn/procframe/internal/gen/test/v1;testv1";
 
 // TickRequest is the request for the Watch RPC.
 message TickRequest {
-  string label = 1;
-  int32 count = 2;
+  string label = 1 [(procframe.options.v1.field).description = "Label for tick events"];
+  int32 count = 2 [(procframe.options.v1.field).description = "Number of ticks to emit"];
 }
 
 // TickResponse is the response for the Watch RPC.

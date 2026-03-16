@@ -132,10 +132,12 @@ var File_test_v1_stream_test_proto protoreflect.FileDescriptor
 
 const file_test_v1_stream_test_proto_rawDesc = "" +
 	"\n" +
-	"\x19test/v1/stream_test.proto\x12\atest.v1\x1a\"procframe/options/v1/options.proto\"9\n" +
-	"\vTickRequest\x12\x14\n" +
-	"\x05label\x18\x01 \x01(\tR\x05label\x12\x14\n" +
-	"\x05count\x18\x02 \x01(\x05R\x05count\"6\n" +
+	"\x19test/v1/stream_test.proto\x12\atest.v1\x1a\"procframe/options/v1/options.proto\"u\n" +
+	"\vTickRequest\x121\n" +
+	"\x05label\x18\x01 \x01(\tB\x1b\xd2\xf3\x18\x17\n" +
+	"\x15Label for tick eventsR\x05label\x123\n" +
+	"\x05count\x18\x02 \x01(\x05B\x1d\xd2\xf3\x18\x19\n" +
+	"\x17Number of ticks to emitR\x05count\"6\n" +
 	"\fTickResponse\x12\x14\n" +
 	"\x05label\x18\x01 \x01(\tR\x05label\x12\x10\n" +
 	"\x03seq\x18\x02 \x01(\x05R\x03seq2\x80\x01\n" +

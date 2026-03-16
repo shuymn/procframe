@@ -85,6 +85,11 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 			fmt.Fprintln(stdout, string(out))
 			return nil
 		},
+		HelpFlags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("", flag.ContinueOnError)
+			fs.String("target", "", "")
+			return fs
+		},
 	}
 	node_cliopts_explicit_enabled := &cli.Node{
 		Segment: "explicit-enabled",
@@ -133,6 +138,11 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 			fmt.Fprintln(stdout, string(out))
 			return nil
 		},
+		HelpFlags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("", flag.ContinueOnError)
+			fs.String("target", "", "")
+			return fs
+		},
 	}
 	node_cliopts_ws_enabled := &cli.Node{
 		Segment: "ws-enabled",
@@ -180,6 +190,11 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 			}
 			fmt.Fprintln(stdout, string(out))
 			return nil
+		},
+		HelpFlags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("", flag.ContinueOnError)
+			fs.String("target", "", "")
+			return fs
 		},
 	}
 	node_cliopts := &cli.Node{

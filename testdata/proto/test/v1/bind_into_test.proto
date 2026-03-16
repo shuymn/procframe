@@ -7,7 +7,7 @@ import "procframe/options/v1/options.proto";
 option go_package = "github.com/shuymn/procframe/internal/gen/test/v1;testv1";
 
 message RepoScope {
-  string org = 1;
+  string org = 1 [(procframe.options.v1.field).description = "Organization name"];
 }
 
 enum PRState {
@@ -21,7 +21,7 @@ message PRLabel {
 }
 
 message PRScope {
-  PRState state = 1;
+  PRState state = 1 [(procframe.options.v1.field).description = "Filter by PR state"];
   // The following fields exercise unsupported bind_into field types.
   // They must be silently skipped in group flags (no flat flag generation)
   // but still compile correctly.
@@ -32,7 +32,7 @@ message PRScope {
 message PRListRequest {
   RepoScope repo = 1;
   PRScope pr = 2;
-  int32 limit = 3;
+  int32 limit = 3 [(procframe.options.v1.field).description = "Maximum number of results"];
 }
 
 message PRListResponse {

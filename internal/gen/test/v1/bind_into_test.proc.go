@@ -44,7 +44,7 @@ func NewPRServiceCLIRunner(h PRServiceHandler, opts ...cli.Option) *cli.Runner {
 				fs := flag.NewFlagSet("list", flag.ContinueOnError)
 				fs.SetOutput(io.Discard)
 				var flag_limit int32
-				fs.Var(cli.NewInt32Value(&flag_limit), "limit", "")
+				fs.Var(cli.NewInt32Value(&flag_limit), "limit", "Maximum number of results")
 				if err := fs.Parse(args); err != nil {
 					return err
 				}
@@ -77,6 +77,11 @@ func NewPRServiceCLIRunner(h PRServiceHandler, opts ...cli.Option) *cli.Runner {
 			fmt.Fprintln(stdout, string(out))
 			return nil
 		},
+		HelpFlags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("", flag.ContinueOnError)
+			fs.Var(cli.NewInt32Value(nil), "limit", "Maximum number of results")
+			return fs
+		},
 	}
 	node_repo_pr := &cli.Node{
 		Segment: "pr",
@@ -87,7 +92,7 @@ func NewPRServiceCLIRunner(h PRServiceHandler, opts ...cli.Option) *cli.Runner {
 			fs.Var(cli.NewEnumValue(&bind_pr_state, []cli.EnumMapping{
 				{CLIValue: "open", Number: 1},
 				{CLIValue: "closed", Number: 2},
-			}, "PRState"), "state", "")
+			}, "PRState"), "state", "Filter by PR state (values: open, closed)")
 			return fs
 		}(),
 		Children: map[string]*cli.Node{
@@ -124,8 +129,9 @@ func NewPRServiceCLIRunner(h PRServiceHandler, opts ...cli.Option) *cli.Runner {
 							Type: "message",
 						},
 						{
-							Name: "limit",
-							Type: "int32",
+							Name:        "limit",
+							Type:        "int32",
+							Description: "Maximum number of results",
 						},
 					},
 					Output: []cli.SchemaField{

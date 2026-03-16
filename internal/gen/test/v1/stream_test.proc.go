@@ -44,9 +44,9 @@ func NewTickServiceCLIRunner(h TickServiceHandler, opts ...cli.Option) *cli.Runn
 				fs := flag.NewFlagSet("watch", flag.ContinueOnError)
 				fs.SetOutput(io.Discard)
 				var flag_label string
-				fs.StringVar(&flag_label, "label", "", "")
+				fs.StringVar(&flag_label, "label", "", "Label for tick events")
 				var flag_count int32
-				fs.Var(cli.NewInt32Value(&flag_count), "count", "")
+				fs.Var(cli.NewInt32Value(&flag_count), "count", "Number of ticks to emit")
 				if err := fs.Parse(args); err != nil {
 					return err
 				}
@@ -77,6 +77,12 @@ func NewTickServiceCLIRunner(h TickServiceHandler, opts ...cli.Option) *cli.Runn
 				Meta: procframe.Meta{Procedure: "/test.v1.TickService/Watch"},
 			}, stream)
 		},
+		HelpFlags: func() *flag.FlagSet {
+			fs := flag.NewFlagSet("", flag.ContinueOnError)
+			fs.String("label", "", "Label for tick events")
+			fs.Var(cli.NewInt32Value(nil), "count", "Number of ticks to emit")
+			return fs
+		},
 	}
 	node_tick := &cli.Node{
 		Segment: "tick",
@@ -101,12 +107,14 @@ func NewTickServiceCLIRunner(h TickServiceHandler, opts ...cli.Option) *cli.Runn
 					Procedure: "/test.v1.TickService/Watch",
 					Flags: []cli.SchemaField{
 						{
-							Name: "label",
-							Type: "string",
+							Name:        "label",
+							Type:        "string",
+							Description: "Label for tick events",
 						},
 						{
-							Name: "count",
-							Type: "int32",
+							Name:        "count",
+							Type:        "int32",
+							Description: "Number of ticks to emit",
 						},
 					},
 					Output: []cli.SchemaField{

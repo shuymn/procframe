@@ -8,9 +8,9 @@ option go_package = "github.com/shuymn/procframe/internal/gen/test/v1;testv1";
 
 // EchoRequest is the request for the Echo RPC.
 message EchoRequest {
-  string message = 1;
-  int32 count = 2;
-  bool uppercase = 3;
+  string message = 1 [(procframe.options.v1.field).description = "The message to echo back"];
+  int32 count = 2 [(procframe.options.v1.field).description = "Number of times to repeat"];
+  bool uppercase = 3 [(procframe.options.v1.field).description = "Convert to uppercase"];
 }
 
 // EchoResponse is the response for the Echo RPC.
