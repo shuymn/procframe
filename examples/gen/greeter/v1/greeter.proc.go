@@ -110,7 +110,7 @@ func NewGreeterServiceCLIRunner(h GreeterServiceHandler, opts ...cli.Option) *cl
 					Name: flag_name,
 				}
 			}
-			resp, err := procframe.InvokeUnary(ctx, procframe.CallSpec{Procedure: "/greeter.v1.GreeterService/Greet", Transport: procframe.TransportCLI, StreamType: procframe.StreamTypeUnary}, &procframe.Request[GreetRequest]{
+			resp, err := procframe.InvokeUnary(ctx, procframe.CallSpec{Procedure: "/greeter.v1.GreeterService/Greet", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary}, &procframe.Request[GreetRequest]{
 				Msg:  req,
 				Meta: procframe.Meta{Procedure: "/greeter.v1.GreeterService/Greet"},
 			}, h.Greet, cli.InterceptorsFromContext(ctx)...)

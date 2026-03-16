@@ -30,12 +30,12 @@ func TestIntegration_ConnectInterceptor(t *testing.T) {
 			}, nil
 		},
 		connecttransport.WithInterceptors(
-			procframe.UnaryInterceptorFunc(func(_ procframe.UnaryFunc) procframe.UnaryFunc {
-				return func(_ context.Context, req procframe.AnyRequest) (procframe.AnyResponse, error) {
-					if req.Spec().Transport != procframe.TransportConnect {
-						t.Fatalf("want Connect transport, got %q", req.Spec().Transport)
+			procframe.InterceptorFunc(func(_ procframe.HandlerFunc) procframe.HandlerFunc {
+				return func(_ context.Context, conn procframe.Conn) error {
+					if conn.Spec().Transport != procframe.TransportConnect {
+						t.Fatalf("want Connect transport, got %q", conn.Spec().Transport)
 					}
-					return procframe.NewAnyResponse(&testv1.EchoResponse{Message: "intercepted"}), nil
+					return conn.Send(procframe.NewAnyResponse(&testv1.EchoResponse{Message: "intercepted"}))
 				}
 			}),
 		),

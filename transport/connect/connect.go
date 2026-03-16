@@ -59,9 +59,9 @@ func NewUnaryHandler[Req, Res any](
 			pResp, err := procframe.InvokeUnary(
 				ctx,
 				procframe.CallSpec{
-					Procedure:  procedure,
-					Transport:  procframe.TransportConnect,
-					StreamType: procframe.StreamTypeUnary,
+					Procedure: procedure,
+					Transport: procframe.TransportConnect,
+					Shape:     procframe.CallShapeUnary,
 				},
 				pReq,
 				handler,
@@ -97,9 +97,9 @@ func NewServerStreamHandler[Req, Res any](
 			if err := procframe.InvokeServerStream(
 				ctx,
 				procframe.CallSpec{
-					Procedure:  procedure,
-					Transport:  procframe.TransportConnect,
-					StreamType: procframe.StreamTypeServerStream,
+					Procedure: procedure,
+					Transport: procframe.TransportConnect,
+					Shape:     procframe.CallShapeServerStream,
 				},
 				pReq,
 				adapter,

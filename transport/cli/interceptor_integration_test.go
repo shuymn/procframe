@@ -35,12 +35,12 @@ func TestIntegration_CLIInterceptor(t *testing.T) {
 		cli.WithStdout(&stdout),
 		cli.WithStderr(&bytes.Buffer{}),
 		cli.WithInterceptors(
-			procframe.UnaryInterceptorFunc(func(_ procframe.UnaryFunc) procframe.UnaryFunc {
-				return func(_ context.Context, req procframe.AnyRequest) (procframe.AnyResponse, error) {
-					if req.Spec().Transport != procframe.TransportCLI {
-						t.Fatalf("want CLI transport, got %q", req.Spec().Transport)
+			procframe.InterceptorFunc(func(_ procframe.HandlerFunc) procframe.HandlerFunc {
+				return func(_ context.Context, conn procframe.Conn) error {
+					if conn.Spec().Transport != procframe.TransportCLI {
+						t.Fatalf("want CLI transport, got %q", conn.Spec().Transport)
 					}
-					return procframe.NewAnyResponse(&testv1.EchoResponse{Message: "intercepted", Count: 42}), nil
+					return conn.Send(procframe.NewAnyResponse(&testv1.EchoResponse{Message: "intercepted", Count: 42}))
 				}
 			}),
 		),

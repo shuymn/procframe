@@ -54,9 +54,9 @@ func HandleUnary[Req, Res any](
 		resp, err := procframe.InvokeUnary(
 			ctx,
 			procframe.CallSpec{
-				Procedure:  procedure,
-				Transport:  procframe.TransportWS,
-				StreamType: procframe.StreamTypeUnary,
+				Procedure: procedure,
+				Transport: procframe.TransportWS,
+				Shape:     procframe.CallShapeUnary,
 			},
 			&procframe.Request[Req]{
 				Msg:  req,
@@ -112,9 +112,9 @@ func HandleServerStream[Req, Res any](
 		err = procframe.InvokeServerStream(
 			ctx,
 			procframe.CallSpec{
-				Procedure:  procedure,
-				Transport:  procframe.TransportWS,
-				StreamType: procframe.StreamTypeServerStream,
+				Procedure: procedure,
+				Transport: procframe.TransportWS,
+				Shape:     procframe.CallShapeServerStream,
 			},
 			&procframe.Request[Req]{
 				Msg:  req,

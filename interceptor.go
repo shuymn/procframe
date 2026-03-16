@@ -1,6 +1,9 @@
 package procframe
 
-import "context"
+import (
+	"context"
+	"io"
+)
 
 // Transport identifies the boundary executing a handler call.
 type Transport string
@@ -11,107 +14,71 @@ const (
 	TransportWS      Transport = "ws"
 )
 
-// StreamType identifies the RPC shape for a handler call.
-type StreamType string
+// CallShape identifies the RPC shape for a handler call.
+type CallShape string
 
 const (
-	StreamTypeUnary        StreamType = "unary"
-	StreamTypeServerStream StreamType = "server_stream"
+	CallShapeUnary        CallShape = "unary"
+	CallShapeClientStream CallShape = "client_stream"
+	CallShapeServerStream CallShape = "server_stream"
+	CallShapeBidi         CallShape = "bidi"
 )
 
-// CallSpec describes a transport call seen by interceptors.
+// CallSpec describes a transport call seen by middleware.
 type CallSpec struct {
-	Procedure  string
-	Transport  Transport
-	StreamType StreamType
+	Procedure string
+	Transport Transport
+	Shape     CallShape
 }
 
-// AnyRequest is the interceptor-facing request view.
+// AnyRequest is the middleware-facing request view.
 type AnyRequest interface {
 	Any() any
 	Meta() *Meta
 	Spec() CallSpec
 }
 
-// AnyResponse is the interceptor-facing response view.
+// AnyResponse is the middleware-facing response view.
 type AnyResponse interface {
 	Any() any
 	Meta() *Meta
 }
 
-// AnyServerStream is the interceptor-facing stream view.
-type AnyServerStream interface {
+// Conn is the generic connection surface seen by middleware.
+// It provides shape-independent Receive/Send operations.
+// Middleware composes behavior by wrapping a Conn and delegating
+// Receive/Send to the inner Conn (the conn-decorator pattern).
+type Conn interface {
 	Context() context.Context
 	Spec() CallSpec
+	Receive() (AnyRequest, error)
 	Send(AnyResponse) error
 }
 
-// UnaryFunc is the common unary invocation shape used by interceptors.
-type UnaryFunc func(context.Context, AnyRequest) (AnyResponse, error)
-
-// ServerStreamFunc is the common server-stream invocation shape used by interceptors.
-type ServerStreamFunc func(context.Context, AnyRequest, AnyServerStream) error
-
-// StreamSendFunc wraps an individual server-stream send.
-type StreamSendFunc func(AnyResponse) error
+// HandlerFunc is the generic handler invocation shape used by middleware.
+type HandlerFunc func(context.Context, Conn) error
 
 // Interceptor composes cross-cutting behavior around handler execution.
 type Interceptor interface {
-	WrapUnary(UnaryFunc) UnaryFunc
-	WrapServerStream(ServerStreamFunc) ServerStreamFunc
-	WrapStreamSend(StreamSendFunc) StreamSendFunc
+	Wrap(HandlerFunc) HandlerFunc
 }
 
-// UnaryInterceptorFunc wraps unary calls and leaves streaming unchanged.
-type UnaryInterceptorFunc func(UnaryFunc) UnaryFunc
+// InterceptorFunc is a function that implements [Interceptor].
+type InterceptorFunc func(HandlerFunc) HandlerFunc
 
-func (f UnaryInterceptorFunc) WrapUnary(next UnaryFunc) UnaryFunc {
+func (f InterceptorFunc) Wrap(next HandlerFunc) HandlerFunc {
 	if f == nil {
 		return next
 	}
 	return f(next)
 }
 
-func (UnaryInterceptorFunc) WrapServerStream(next ServerStreamFunc) ServerStreamFunc { return next }
-
-func (UnaryInterceptorFunc) WrapStreamSend(next StreamSendFunc) StreamSendFunc { return next }
-
-// ServerStreamInterceptorFunc wraps server-stream calls and leaves other paths unchanged.
-type ServerStreamInterceptorFunc func(ServerStreamFunc) ServerStreamFunc
-
-func (ServerStreamInterceptorFunc) WrapUnary(next UnaryFunc) UnaryFunc { return next }
-
-func (f ServerStreamInterceptorFunc) WrapServerStream(next ServerStreamFunc) ServerStreamFunc {
-	if f == nil {
-		return next
-	}
-	return f(next)
-}
-
-func (ServerStreamInterceptorFunc) WrapStreamSend(next StreamSendFunc) StreamSendFunc { return next }
-
-// StreamSendInterceptorFunc wraps individual server-stream sends.
-type StreamSendInterceptorFunc func(StreamSendFunc) StreamSendFunc
-
-func (StreamSendInterceptorFunc) WrapUnary(next UnaryFunc) UnaryFunc { return next }
-
-func (StreamSendInterceptorFunc) WrapServerStream(next ServerStreamFunc) ServerStreamFunc {
-	return next
-}
-
-func (f StreamSendInterceptorFunc) WrapStreamSend(next StreamSendFunc) StreamSendFunc {
-	if f == nil {
-		return next
-	}
-	return f(next)
-}
-
-// NewAnyResponse constructs an interceptor-visible response from an arbitrary message.
+// NewAnyResponse constructs a middleware-visible response from an arbitrary message.
 func NewAnyResponse(msg any) AnyResponse {
 	return &responseValue{msg: msg}
 }
 
-// NewAnyResponseWithMeta constructs an interceptor-visible response with explicit metadata.
+// NewAnyResponseWithMeta constructs a middleware-visible response with explicit metadata.
 func NewAnyResponseWithMeta(msg any, meta Meta) AnyResponse {
 	return &responseValue{msg: msg, meta: meta}
 }
@@ -124,30 +91,66 @@ func InvokeUnary[Req, Res any](
 	handler func(context.Context, *Request[Req]) (*Response[Res], error),
 	interceptors ...Interceptor,
 ) (*Response[Res], error) {
-	next := func(ctx context.Context, req AnyRequest) (AnyResponse, error) {
-		typedReq, err := castRequest[Req](req)
+	conn := &unaryConn[Req, Res]{
+		getCtx: func() context.Context { return ctx },
+		spec:   spec,
+		req:    req,
+	}
+
+	inner := HandlerFunc(func(ctx context.Context, c Conn) error {
+		anyReq, err := c.Receive()
 		if err != nil {
-			return nil, err
+			return err
+		}
+		typedReq, err := castRequest[Req](anyReq)
+		if err != nil {
+			return err
 		}
 		resp, err := handler(ctx, typedReq)
-		if resp == nil || err != nil {
-			return nilResponse[Res](resp), err
+		if err != nil {
+			return err
 		}
-		return &responseView[Res]{resp: resp}, nil
-	}
-
-	for i := len(interceptors) - 1; i >= 0; i-- {
-		if interceptors[i] == nil {
-			continue
+		if resp == nil {
+			return nil
 		}
-		next = interceptors[i].WrapUnary(next)
-	}
+		return c.Send(&responseView[Res]{resp: resp})
+	})
 
-	resp, err := next(ctx, &requestView[Req]{spec: spec, req: req})
-	if err != nil {
+	if err := chainInterceptors(inner, interceptors)(ctx, conn); err != nil {
 		return nil, err
 	}
-	return castResponse[Res](resp)
+	return conn.result, nil
+}
+
+// InvokeClientStream executes a typed client-stream handler through the interceptor chain.
+func InvokeClientStream[Req, Res any](
+	ctx context.Context,
+	spec CallSpec,
+	stream ClientStream[Req],
+	handler func(context.Context, ClientStream[Req]) (*Response[Res], error),
+	interceptors ...Interceptor,
+) (*Response[Res], error) {
+	conn := &clientStreamConn[Req, Res]{
+		spec:   spec,
+		stream: stream,
+	}
+
+	inner := HandlerFunc(func(ctx context.Context, c Conn) error {
+		typedStream := &connClientStream[Req]{conn: c}
+		resp, err := handler(ctx, typedStream)
+		if err != nil {
+			return err
+		}
+		if resp == nil {
+			return nil
+		}
+		return c.Send(&responseView[Res]{resp: resp})
+	})
+
+	if err := chainInterceptors(inner, interceptors)(ctx, conn); err != nil {
+		return nil, err
+	}
+	return conn.result, nil
 }
 
 // InvokeServerStream executes a typed server-stream handler through the interceptor chain.
@@ -159,43 +162,61 @@ func InvokeServerStream[Req, Res any](
 	handler func(context.Context, *Request[Req], ServerStream[Res]) error,
 	interceptors ...Interceptor,
 ) error {
-	send := func(resp AnyResponse) error {
-		typedResp, err := castResponse[Res](resp)
-		if err != nil {
-			return err
-		}
-		if typedResp == nil || typedResp.Msg == nil {
-			return NewError(CodeInternal, "handler sent nil response")
-		}
-		return stream.Send(typedResp)
-	}
-	for i := len(interceptors) - 1; i >= 0; i-- {
-		if interceptors[i] == nil {
-			continue
-		}
-		send = interceptors[i].WrapStreamSend(send)
-	}
-
-	next := func(ctx context.Context, req AnyRequest, stream AnyServerStream) error {
-		typedReq, err := castRequest[Req](req)
-		if err != nil {
-			return err
-		}
-		return handler(ctx, typedReq, &typedStream[Res]{stream: stream})
-	}
-	for i := len(interceptors) - 1; i >= 0; i-- {
-		if interceptors[i] == nil {
-			continue
-		}
-		next = interceptors[i].WrapServerStream(next)
-	}
-
-	return next(ctx, &requestView[Req]{spec: spec, req: req}, &anyStream{
-		getCtx: stream.Context,
+	conn := &serverStreamConn[Req, Res]{
 		spec:   spec,
-		send:   send,
+		req:    req,
+		stream: stream,
+	}
+
+	inner := HandlerFunc(func(ctx context.Context, c Conn) error {
+		anyReq, err := c.Receive()
+		if err != nil {
+			return err
+		}
+		typedReq, err := castRequest[Req](anyReq)
+		if err != nil {
+			return err
+		}
+		typedStream := &connServerStream[Res]{conn: c}
+		return handler(ctx, typedReq, typedStream)
 	})
+
+	return chainInterceptors(inner, interceptors)(ctx, conn)
 }
+
+// InvokeBidi executes a typed bidi-stream handler through the interceptor chain.
+func InvokeBidi[Req, Res any](
+	ctx context.Context,
+	spec CallSpec,
+	stream BidiStream[Req, Res],
+	handler func(context.Context, BidiStream[Req, Res]) error,
+	interceptors ...Interceptor,
+) error {
+	conn := &bidiConn[Req, Res]{
+		spec:   spec,
+		stream: stream,
+	}
+
+	inner := HandlerFunc(func(ctx context.Context, c Conn) error {
+		typedStream := &connBidiStream[Req, Res]{conn: c}
+		return handler(ctx, typedStream)
+	})
+
+	return chainInterceptors(inner, interceptors)(ctx, conn)
+}
+
+func chainInterceptors(inner HandlerFunc, interceptors []Interceptor) HandlerFunc {
+	next := inner
+	for i := len(interceptors) - 1; i >= 0; i-- {
+		if interceptors[i] == nil {
+			continue
+		}
+		next = interceptors[i].Wrap(next)
+	}
+	return next
+}
+
+// --- request / response views ---
 
 type requestView[T any] struct {
 	spec CallSpec
@@ -260,44 +281,182 @@ func (r *responseValue) Meta() *Meta {
 	return &r.meta
 }
 
-type anyStream struct {
-	getCtx func() context.Context
-	spec   CallSpec
-	send   StreamSendFunc
+// --- Conn implementations ---
+
+// unaryConn bridges a unary typed handler to the generic Conn surface.
+type unaryConn[Req, Res any] struct {
+	getCtx   func() context.Context
+	spec     CallSpec
+	req      *Request[Req]
+	received bool
+	result   *Response[Res]
 }
 
-func (s *anyStream) Context() context.Context {
-	if s == nil {
+func (c *unaryConn[Req, Res]) Context() context.Context { return c.getCtx() }
+func (c *unaryConn[Req, Res]) Spec() CallSpec           { return c.spec }
+
+func (c *unaryConn[Req, Res]) Receive() (AnyRequest, error) {
+	if c.received {
+		return nil, io.EOF
+	}
+	c.received = true
+	return &requestView[Req]{spec: c.spec, req: c.req}, nil
+}
+
+func (c *unaryConn[Req, Res]) Send(resp AnyResponse) error {
+	if resp == nil {
 		return nil
 	}
-	return s.getCtx()
-}
-
-func (s *anyStream) Spec() CallSpec {
-	if s == nil {
-		return CallSpec{}
+	typedResp, err := castResponse[Res](resp)
+	if err != nil {
+		return err
 	}
-	return s.spec
+	c.result = typedResp
+	return nil
 }
 
-func (s *anyStream) Send(resp AnyResponse) error {
-	if s == nil {
-		return NewError(CodeInternal, "stream is nil")
+// clientStreamConn bridges a client-stream typed handler to the generic Conn surface.
+type clientStreamConn[Req, Res any] struct {
+	spec   CallSpec
+	stream ClientStream[Req]
+	result *Response[Res]
+}
+
+func (c *clientStreamConn[Req, Res]) Context() context.Context { return c.stream.Context() }
+func (c *clientStreamConn[Req, Res]) Spec() CallSpec           { return c.spec }
+
+func (c *clientStreamConn[Req, Res]) Receive() (AnyRequest, error) {
+	req, err := c.stream.Receive()
+	if err != nil {
+		return nil, err
 	}
-	return s.send(resp)
+	return &requestView[Req]{spec: c.spec, req: req}, nil
 }
 
-type typedStream[T any] struct {
-	stream AnyServerStream
+func (c *clientStreamConn[Req, Res]) Send(resp AnyResponse) error {
+	if resp == nil {
+		return nil
+	}
+	typedResp, err := castResponse[Res](resp)
+	if err != nil {
+		return err
+	}
+	c.result = typedResp
+	return nil
 }
 
-func (s *typedStream[T]) Context() context.Context {
-	return s.stream.Context()
+// serverStreamConn bridges a server-stream typed handler to the generic Conn surface.
+type serverStreamConn[Req, Res any] struct {
+	spec     CallSpec
+	req      *Request[Req]
+	received bool
+	stream   ServerStream[Res]
 }
 
-func (s *typedStream[T]) Send(resp *Response[T]) error {
-	return s.stream.Send(nilResponse[T](resp))
+func (c *serverStreamConn[Req, Res]) Context() context.Context { return c.stream.Context() }
+func (c *serverStreamConn[Req, Res]) Spec() CallSpec           { return c.spec }
+
+func (c *serverStreamConn[Req, Res]) Receive() (AnyRequest, error) {
+	if c.received {
+		return nil, io.EOF
+	}
+	c.received = true
+	return &requestView[Req]{spec: c.spec, req: c.req}, nil
 }
+
+func (c *serverStreamConn[Req, Res]) Send(resp AnyResponse) error {
+	typedResp, err := castResponse[Res](resp)
+	if err != nil {
+		return err
+	}
+	if typedResp == nil || typedResp.Msg == nil {
+		return NewError(CodeInternal, "handler sent nil response")
+	}
+	return c.stream.Send(typedResp)
+}
+
+// bidiConn bridges a bidi-stream typed handler to the generic Conn surface.
+type bidiConn[Req, Res any] struct {
+	spec   CallSpec
+	stream BidiStream[Req, Res]
+}
+
+func (c *bidiConn[Req, Res]) Context() context.Context { return c.stream.Context() }
+func (c *bidiConn[Req, Res]) Spec() CallSpec           { return c.spec }
+
+func (c *bidiConn[Req, Res]) Receive() (AnyRequest, error) {
+	req, err := c.stream.Receive()
+	if err != nil {
+		return nil, err
+	}
+	return &requestView[Req]{spec: c.spec, req: req}, nil
+}
+
+func (c *bidiConn[Req, Res]) Send(resp AnyResponse) error {
+	typedResp, err := castResponse[Res](resp)
+	if err != nil {
+		return err
+	}
+	if typedResp == nil || typedResp.Msg == nil {
+		return NewError(CodeInternal, "handler sent nil response")
+	}
+	return c.stream.Send(typedResp)
+}
+
+// --- typed stream adapters (Conn → typed handler interface) ---
+
+// connClientStream adapts a Conn's Receive to a typed ClientStream.
+type connClientStream[Req any] struct {
+	conn Conn
+}
+
+func (s *connClientStream[Req]) Context() context.Context { return s.conn.Context() }
+
+func (s *connClientStream[Req]) Receive() (*Request[Req], error) {
+	anyReq, err := s.conn.Receive()
+	if err != nil {
+		return nil, err
+	}
+	return castRequest[Req](anyReq)
+}
+
+// connServerStream adapts a Conn's Send to a typed ServerStream.
+type connServerStream[Res any] struct {
+	conn Conn
+}
+
+func (s *connServerStream[Res]) Context() context.Context { return s.conn.Context() }
+
+func (s *connServerStream[Res]) Send(resp *Response[Res]) error {
+	if resp == nil {
+		return NewError(CodeInternal, "handler sent nil response")
+	}
+	return s.conn.Send(&responseView[Res]{resp: resp})
+}
+
+// connBidiStream adapts a Conn's Receive/Send to a typed BidiStream.
+type connBidiStream[Req, Res any] struct {
+	conn Conn
+}
+
+func (s *connBidiStream[Req, Res]) Context() context.Context { return s.conn.Context() }
+
+func (s *connBidiStream[Req, Res]) Receive() (*Request[Req], error) {
+	anyReq, err := s.conn.Receive()
+	if err != nil {
+		return nil, err
+	}
+	return castRequest[Req](anyReq)
+}
+
+func (s *connBidiStream[Req, Res]) Send(resp *Response[Res]) error {
+	if resp == nil {
+		return NewError(CodeInternal, "handler sent nil response")
+	}
+	return s.conn.Send(&responseView[Res]{resp: resp})
+}
+
+// --- cast helpers ---
 
 func castRequest[T any](req AnyRequest) (*Request[T], error) {
 	if req == nil {
@@ -339,11 +498,4 @@ func castResponse[T any](resp AnyResponse) (*Response[T], error) {
 		Msg:  msg,
 		Meta: meta,
 	}, nil
-}
-
-func nilResponse[T any](resp *Response[T]) AnyResponse {
-	if resp == nil {
-		return nil
-	}
-	return &responseView[T]{resp: resp}
 }

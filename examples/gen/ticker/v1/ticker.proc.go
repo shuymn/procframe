@@ -158,7 +158,7 @@ func NewTickerServiceCLIRunner(h TickerServiceHandler, opts ...cli.Option) *cli.
 				fmt.Fprintln(stdout, string(out))
 				return nil
 			})
-			return procframe.InvokeServerStream(ctx, procframe.CallSpec{Procedure: "/ticker.v1.TickerService/Tick", Transport: procframe.TransportCLI, StreamType: procframe.StreamTypeServerStream}, &procframe.Request[TickRequest]{
+			return procframe.InvokeServerStream(ctx, procframe.CallSpec{Procedure: "/ticker.v1.TickerService/Tick", Transport: procframe.TransportCLI, Shape: procframe.CallShapeServerStream}, &procframe.Request[TickRequest]{
 				Msg:  req,
 				Meta: procframe.Meta{Procedure: "/ticker.v1.TickerService/Tick"},
 			}, stream, h.Tick, cli.InterceptorsFromContext(ctx)...)

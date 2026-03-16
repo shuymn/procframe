@@ -17,14 +17,10 @@ func TestIntegration_WSInterceptor(t *testing.T) {
 
 	s := ws.NewServer(
 		ws.WithInterceptors(
-			procframe.StreamSendInterceptorFunc(func(next procframe.StreamSendFunc) procframe.StreamSendFunc {
-				return func(resp procframe.AnyResponse) error {
-					msg, ok := resp.Any().(*testv1.TickResponse)
-					if !ok {
-						t.Fatalf("want *testv1.TickResponse, got %T", resp.Any())
-					}
-					msg.Label = "wrapped:" + msg.Label
-					return next(resp)
+			// Interceptor wraps Conn.Send via a conn decorator
+			procframe.InterceptorFunc(func(next procframe.HandlerFunc) procframe.HandlerFunc {
+				return func(ctx context.Context, conn procframe.Conn) error {
+					return next(ctx, &wsSendWrapper{Conn: conn, t: t})
 				}
 			}),
 		),
@@ -74,4 +70,19 @@ func TestIntegration_WSInterceptor(t *testing.T) {
 			t.Fatalf("frame %d: want wrapped label, got %q", i, tick.Label)
 		}
 	}
+}
+
+// wsSendWrapper wraps Conn.Send to modify outbound responses.
+type wsSendWrapper struct {
+	procframe.Conn
+	t *testing.T
+}
+
+func (w *wsSendWrapper) Send(resp procframe.AnyResponse) error {
+	msg, ok := resp.Any().(*testv1.TickResponse)
+	if !ok {
+		w.t.Fatalf("want *testv1.TickResponse, got %T", resp.Any())
+	}
+	msg.Label = "wrapped:" + msg.Label
+	return w.Conn.Send(resp)
 }
