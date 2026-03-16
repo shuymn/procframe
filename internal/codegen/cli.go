@@ -10,8 +10,6 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-var sortPkg = protogen.GoImportPath("sort")
-
 var (
 	contextPkg      = protogen.GoImportPath("context")
 	encodingJSONPkg = protogen.GoImportPath("encoding/json")
@@ -32,6 +30,8 @@ func generateCLI(
 	tree *treeNode,
 ) {
 	handlerType := svc.GoName + "Handler"
+	schemaEntries := collectSchemaEntries(svc, svcInfo)
+	schemaNames := schemaDataNames(svc.GoName)
 
 	// Collect all nodes bottom-up and assign to variables
 	var decls []nodeDecl
@@ -39,6 +39,8 @@ func generateCLI(
 
 	// Resolve bind_into contexts
 	bindCtxs := resolveBindIntoCtxs(tree, svc)
+
+	emitSchemaDataDecls(g, schemaEntries, schemaNames)
 
 	g.P("// New", svc.GoName, "CLIRunner constructs a [", cliPkg.Ident("Runner"), "]")
 	g.P("// for ", svc.GoName, ".")
@@ -71,7 +73,7 @@ func generateCLI(
 	rootVar := decls[len(decls)-1].varName
 
 	// Add schema subcommand to root
-	emitSchemaNode(g, svc, svcInfo, rootVar)
+	emitSchemaNode(g, rootVar, schemaNames)
 
 	g.P("\treturn ", cliPkg.Ident("NewRunner"), "(", rootVar, ", opts...)")
 	g.P("}")
@@ -90,6 +92,21 @@ type bindIntoCtx struct {
 	goFieldName string            // Go field name (e.g. "Pr")
 	msg         *protogen.Message // the bind_into message type
 	varPrefix   string            // variable prefix (e.g. "bind_pr")
+}
+
+type schemaEntry struct {
+	commandPath string
+	procedure   string
+	summary     string
+	streaming   bool
+	input       *protogen.Message
+	output      *protogen.Message
+}
+
+type schemaDataVarNames struct {
+	byCommand   string
+	byProcedure string
+	all         string
 }
 
 // collectDecls walks the tree depth-first and collects declarations
@@ -136,6 +153,40 @@ func pathToVarName(path []string) string {
 		parts[i] = strings.ReplaceAll(p, "-", "_")
 	}
 	return "node_" + strings.Join(parts, "_")
+}
+
+func collectSchemaEntries(svc *protogen.Service, svcInfo *serviceInfo) []schemaEntry {
+	entries := make([]schemaEntry, 0, len(svcInfo.Methods))
+	for _, mi := range svcInfo.Methods {
+		if !mi.CLI {
+			continue
+		}
+		method := findMethod(svc, mi.GoName)
+		if method == nil {
+			continue
+		}
+		entries = append(entries, schemaEntry{
+			commandPath: strings.Join(slices.Concat(svcInfo.Path, mi.Path), " "),
+			procedure:   mi.FullName,
+			summary:     mi.Summary,
+			streaming:   mi.IsStreaming,
+			input:       method.Input,
+			output:      method.Output,
+		})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].commandPath < entries[j].commandPath
+	})
+	return entries
+}
+
+func schemaDataNames(serviceGoName string) schemaDataVarNames {
+	base := "schemaData" + serviceGoName
+	return schemaDataVarNames{
+		byCommand:   base + "ByCommand",
+		byProcedure: base + "ByProcedure",
+		all:         base + "All",
+	}
 }
 
 func emitGroupDecl(g *protogen.GeneratedFile, d nodeDecl, bindCtxs []bindIntoCtx) {
@@ -766,11 +817,54 @@ func emitBindIntoFieldConstruction(g *protogen.GeneratedFile, bc *bindIntoCtx, i
 
 // emitSchemaNode generates the "schema" subcommand leaf that prints
 // procedure type information as JSON.
+func emitSchemaDataDecls(
+	g *protogen.GeneratedFile,
+	entries []schemaEntry,
+	names schemaDataVarNames,
+) {
+	g.P("var ", names.byCommand, " = map[string]", cliPkg.Ident("CommandInfo"), "{")
+	for _, entry := range entries {
+		g.P("\t", fmt.Sprintf("%q", entry.commandPath), ": ")
+		emitSchemaInfoLiteral(g, entry, "\t")
+	}
+	g.P("}")
+	g.P()
+
+	g.P("var ", names.byProcedure, " = map[string]", cliPkg.Ident("CommandInfo"), "{")
+	for _, entry := range entries {
+		g.P("\t", fmt.Sprintf("%q", entry.procedure), ": ")
+		emitSchemaInfoLiteral(g, entry, "\t")
+	}
+	g.P("}")
+	g.P()
+
+	g.P("var ", names.all, " = []", cliPkg.Ident("CommandInfo"), "{")
+	for _, entry := range entries {
+		emitSchemaInfoLiteral(g, entry, "\t")
+	}
+	g.P("}")
+	g.P()
+}
+
+func emitSchemaInfoLiteral(g *protogen.GeneratedFile, entry schemaEntry, indent string) {
+	g.P(indent, "{")
+	g.P(indent, "\tCommand: ", fmt.Sprintf("%q", entry.commandPath), ",")
+	if entry.summary != "" {
+		g.P(indent, "\tSummary: ", fmt.Sprintf("%q", entry.summary), ",")
+	}
+	g.P(indent, "\tProcedure: ", fmt.Sprintf("%q", entry.procedure), ",")
+	emitSchemaFields(g, entry.input, "Flags", indent+"\t")
+	emitSchemaFields(g, entry.output, "Output", indent+"\t")
+	if entry.streaming {
+		g.P(indent, "\tStreaming: true,")
+	}
+	g.P(indent, "},")
+}
+
 func emitSchemaNode(
 	g *protogen.GeneratedFile,
-	svc *protogen.Service,
-	svcInfo *serviceInfo,
 	rootVar string,
+	names schemaDataVarNames,
 ) {
 	g.P("\t", rootVar, `.Children["schema"] = &`, cliPkg.Ident("Node"), "{")
 	g.P("\t\tSegment: \"schema\",")
@@ -783,59 +877,19 @@ func emitSchemaNode(
 		") error {",
 	)
 
-	emitSchemaMap(g, svc, svcInfo)
-	emitSchemaLookup(g)
+	emitSchemaLookup(g, names)
 
 	g.P("\t\t},")
 	g.P("\t}")
 }
 
-// emitSchemaMap emits the static schema map within the schema command.
-func emitSchemaMap(
-	g *protogen.GeneratedFile,
-	svc *protogen.Service,
-	svcInfo *serviceInfo,
-) {
-	g.P("\t\t\tschemas := map[string]", cliPkg.Ident("CommandInfo"), "{")
-	for _, mi := range svcInfo.Methods {
-		if !mi.CLI {
-			continue
-		}
-		method := findMethod(svc, mi.GoName)
-		if method == nil {
-			continue
-		}
-		cmdPath := strings.Join(slices.Concat(svcInfo.Path, mi.Path), " ")
-		g.P("\t\t\t\t", fmt.Sprintf("%q", cmdPath), ": {")
-		g.P("\t\t\t\t\tCommand: ", fmt.Sprintf("%q", cmdPath), ",")
-		if mi.Summary != "" {
-			g.P("\t\t\t\t\tSummary: ", fmt.Sprintf("%q", mi.Summary), ",")
-		}
-		g.P("\t\t\t\t\tProcedure: ", fmt.Sprintf("%q", mi.FullName), ",")
-		emitSchemaFields(g, method.Input, "Flags", "\t\t\t\t\t")
-		emitSchemaFields(g, method.Output, "Output", "\t\t\t\t\t")
-		if mi.IsStreaming {
-			g.P("\t\t\t\t\tStreaming: true,")
-		}
-		g.P("\t\t\t\t},")
-	}
-	g.P("\t\t\t}")
-}
-
 // emitSchemaLookup emits the lookup/output logic for the schema command.
-func emitSchemaLookup(g *protogen.GeneratedFile) {
+func emitSchemaLookup(g *protogen.GeneratedFile, names schemaDataVarNames) {
 	g.P("\t\t\tif len(args) > 0 {")
 	g.P("\t\t\t\tkey := ", stringsPkg.Ident("Join"), "(args, \" \")")
-	g.P("\t\t\t\tinfo, ok := schemas[key]")
+	g.P("\t\t\t\tinfo, ok := ", names.byCommand, "[key]")
 	g.P("\t\t\t\tif !ok {")
-	// Fallback: linear scan by procedure name
-	g.P("\t\t\t\t\tfor _, v := range schemas {")
-	g.P("\t\t\t\t\t\tif v.Procedure == key {")
-	g.P("\t\t\t\t\t\t\tinfo = v")
-	g.P("\t\t\t\t\t\t\tok = true")
-	g.P("\t\t\t\t\t\t\tbreak")
-	g.P("\t\t\t\t\t\t}")
-	g.P("\t\t\t\t\t}")
+	g.P("\t\t\t\t\tinfo, ok = ", names.byProcedure, "[key]")
 	g.P("\t\t\t\t}")
 	g.P("\t\t\t\tif !ok {")
 	g.P(
@@ -856,17 +910,12 @@ func emitSchemaLookup(g *protogen.GeneratedFile) {
 	g.P("\t\t\t\treturn nil")
 	g.P("\t\t\t}")
 
-	g.P("\t\t\tall := make([]", cliPkg.Ident("CommandInfo"), ", 0, len(schemas))")
-	g.P("\t\t\tfor _, info := range schemas {")
-	g.P("\t\t\t\tall = append(all, info)")
-	g.P("\t\t\t}")
-	g.P("\t\t\t", sortPkg.Ident("Slice"), "(all, func(i, j int) bool {")
-	g.P("\t\t\t\treturn all[i].Command < all[j].Command")
-	g.P("\t\t\t})")
 	g.P(
 		"\t\t\tout, err := ",
 		encodingJSONPkg.Ident("MarshalIndent"),
-		`(all, "", "  ")`,
+		"(",
+		names.all,
+		`, "", "  ")`,
 	)
 	g.P("\t\t\tif err != nil {")
 	g.P("\t\t\t\treturn err")
