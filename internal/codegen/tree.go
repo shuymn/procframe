@@ -20,7 +20,7 @@ type leafInfo struct {
 	InputGoName   string // Go name of the request type (e.g. "PullRequestListRequest")
 	OutputGoName  string // Go name of the response type (e.g. "PullRequestListResponse")
 	FullName      string // full protobuf procedure name (e.g. "/pkg.v1.RepoPRService/List")
-	IsStreaming   bool   // true for server-streaming methods
+	Shape         string // "unary", "client_stream", "server_stream", "bidi"
 }
 
 func (n *treeNode) isGroup() bool {
@@ -45,7 +45,7 @@ func buildTree(services []serviceInfo) *treeNode {
 				InputGoName:   m.InputGoName,
 				OutputGoName:  m.OutputGoName,
 				FullName:      m.FullName,
-				IsStreaming:   m.IsStreaming,
+				Shape:         m.Shape,
 			}, svc)
 		}
 	}
@@ -126,5 +126,5 @@ type methodInfo struct {
 	InputGoName  string
 	OutputGoName string
 	FullName     string
-	IsStreaming  bool
+	Shape        string // "unary", "client_stream", "server_stream", "bidi"
 }

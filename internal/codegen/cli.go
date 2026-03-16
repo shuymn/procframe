@@ -12,6 +12,7 @@ import (
 
 var (
 	base64Pkg       = protogen.GoImportPath("encoding/base64")
+	bufioPkg        = protogen.GoImportPath("bufio")
 	contextPkg      = protogen.GoImportPath("context")
 	encodingJSONPkg = protogen.GoImportPath("encoding/json")
 	flagPkg         = protogen.GoImportPath("flag")
@@ -170,7 +171,7 @@ func collectSchemaEntries(svc *protogen.Service, svcInfo *serviceInfo) []schemaE
 			commandPath: strings.Join(slices.Concat(svcInfo.Path, mi.Path), " "),
 			procedure:   mi.FullName,
 			summary:     mi.Summary,
-			streaming:   mi.IsStreaming,
+			streaming:   mi.Shape == shapeServerStream || mi.Shape == shapeBidi,
 			input:       method.Input,
 			output:      method.Output,
 		})
@@ -261,19 +262,30 @@ func emitLeafDecl(g *protogen.GeneratedFile, d nodeDecl, svc *protogen.Service, 
 		") error {",
 	)
 
-	// --json / flag parsing branching
-	emitRequestParsing(g, d, method, bindCtxs)
-
-	if leaf.IsStreaming {
-		emitStreamingHandlerCall(g, method, leaf)
-	} else {
-		emitHandlerCall(g, method, leaf)
+	switch leaf.Shape {
+	case shapeClientStream:
+		emitClientStreamBody(g, method, leaf)
+	case shapeBidi:
+		emitBidiStreamBody(g, method, leaf)
+	default:
+		// --json / flag parsing branching
+		emitRequestParsing(g, d, method, bindCtxs)
+		if leaf.Shape == shapeServerStream {
+			emitStreamingHandlerCall(g, method, leaf)
+		} else {
+			emitHandlerCall(g, method, leaf)
+		}
 	}
 
 	g.P("\t\t},")
 
-	// HelpFlags factory for help display
-	emitHelpFlags(g, method.Input, bindCtxs)
+	switch leaf.Shape {
+	case shapeClientStream, shapeBidi:
+		// No HelpFlags for streaming-input commands
+	default:
+		// HelpFlags factory for help display
+		emitHelpFlags(g, method.Input, bindCtxs)
+	}
 
 	g.P("\t}")
 }
@@ -533,6 +545,173 @@ func emitStreamingHandlerCall(g *protogen.GeneratedFile, method *protogen.Method
 	g.P("\t\t\t\tMsg:  req,")
 	g.P("\t\t\t\tMeta: ", procframePkg.Ident("Meta"), "{Procedure: ", fmt.Sprintf("%q", leaf.FullName), "},")
 	g.P("\t\t\t}, stream, h.", method.GoName, ", ", cliPkg.Ident("InterceptorsFromContext"), "(ctx)...)")
+}
+
+// emitStdinGuards emits the --json and flag rejection guards for stdin-based shapes.
+func emitStdinGuards(g *protogen.GeneratedFile, shape string) {
+	g.P("\t\t\tif _, ok := ", cliPkg.Ident("JSONPayloadFromContext"), "(ctx); ok {")
+	g.P(
+		"\t\t\t\treturn ",
+		procframePkg.Ident("NewError"),
+		"(",
+		procframePkg.Ident("CodeInvalidArgument"),
+		`, "`, shape, ` command reads from stdin; --json is not supported")`,
+	)
+	g.P("\t\t\t}")
+	g.P("\t\t\tif len(args) > 0 {")
+	g.P(
+		"\t\t\t\treturn ",
+		procframePkg.Ident("NewError"),
+		"(",
+		procframePkg.Ident("CodeInvalidArgument"),
+		`, "`, shape, ` command does not accept flags; pipe NDJSON on stdin")`,
+	)
+	g.P("\t\t\t}")
+}
+
+// emitNDJSONReadCallback emits the NDJSON scanner + read callback for stdin input.
+func emitNDJSONReadCallback(g *protogen.GeneratedFile, method *protogen.Method, indent string) {
+	g.P(indent, "if !scanner.Scan() {")
+	g.P(indent, "\tif err := scanner.Err(); err != nil {")
+	g.P(indent, "\t\treturn nil, err")
+	g.P(indent, "\t}")
+	g.P(indent, "\treturn nil, ", ioPkg.Ident("EOF"))
+	g.P(indent, "}")
+	g.P(indent, "req := &", method.Input.GoIdent, "{}")
+	g.P(indent, "if err := ", protojsonPkg.Ident("Unmarshal"), "(scanner.Bytes(), req); err != nil {")
+	g.P(
+		indent, "\treturn nil, ",
+		procframePkg.Ident("NewError"),
+		"(",
+		procframePkg.Ident("CodeInvalidArgument"),
+		", err.Error())",
+	)
+	g.P(indent, "}")
+	g.P(indent, "return &", procframePkg.Ident("Request"), "[", method.Input.GoIdent, "]{Msg: req}, nil")
+}
+
+// emitClientStreamBody generates the CLI body for a client-stream command.
+func emitClientStreamBody(g *protogen.GeneratedFile, method *protogen.Method, leaf *leafInfo) {
+	emitStdinGuards(g, "client-stream")
+
+	g.P("\t\t\tscanner := ", bufioPkg.Ident("NewScanner"), "(", cliPkg.Ident("StdinFromContext"), "(ctx))")
+	g.P(
+		"\t\t\treader := ",
+		cliPkg.Ident("NewStreamReader"),
+		"[", method.Input.GoIdent, "](",
+		"ctx, func() (*",
+		procframePkg.Ident("Request"),
+		"[", method.Input.GoIdent, "], error) {",
+	)
+	emitNDJSONReadCallback(g, method, "\t\t\t\t")
+	g.P("\t\t\t})")
+
+	g.P(
+		"\t\t\tresp, err := ",
+		procframePkg.Ident("InvokeClientStream"),
+		"(ctx, ",
+		procframePkg.Ident("CallSpec"),
+		"{",
+		"Procedure: ",
+		fmt.Sprintf("%q", leaf.FullName),
+		", Transport: ",
+		procframePkg.Ident("TransportCLI"),
+		", Shape: ",
+		procframePkg.Ident("CallShapeClientStream"),
+		"}, reader, h.", method.GoName, ", ", cliPkg.Ident("InterceptorsFromContext"), "(ctx)...)",
+	)
+	g.P("\t\t\tif err != nil {")
+	g.P("\t\t\t\treturn err")
+	g.P("\t\t\t}")
+	g.P("\t\t\tif resp == nil || resp.Msg == nil {")
+	g.P(
+		"\t\t\t\treturn ",
+		procframePkg.Ident("NewError"),
+		"(",
+		procframePkg.Ident("CodeInternal"),
+		`, "handler returned nil response")`,
+	)
+	g.P("\t\t\t}")
+
+	g.P("\t\t\tvar out []byte")
+	g.P("\t\t\tif ", cliPkg.Ident("OutputFormatFromContext"), "(ctx) == ", cliPkg.Ident("OutputJSON"), " {")
+	g.P("\t\t\t\tout, err = ", protojsonPkg.Ident("MarshalOptions"), "{}.Marshal(resp.Msg)")
+	g.P("\t\t\t} else {")
+	g.P("\t\t\t\tout, err = ", protojsonPkg.Ident("MarshalOptions"), "{Multiline: true}.Marshal(resp.Msg)")
+	g.P("\t\t\t}")
+	g.P("\t\t\tif err != nil {")
+	g.P("\t\t\t\treturn err")
+	g.P("\t\t\t}")
+	g.P("\t\t\t", fmtPkg.Ident("Fprintln"), "(stdout, string(out))")
+	g.P("\t\t\treturn nil")
+}
+
+// emitBidiStreamBody generates the CLI body for a bidi-stream command.
+// Reads NDJSON from stdin and writes NDJSON to stdout concurrently.
+func emitBidiStreamBody(g *protogen.GeneratedFile, method *protogen.Method, leaf *leafInfo) {
+	emitStdinGuards(g, "bidi")
+
+	g.P("\t\t\tscanner := ", bufioPkg.Ident("NewScanner"), "(", cliPkg.Ident("StdinFromContext"), "(ctx))")
+	g.P(
+		"\t\t\tstream := ",
+		cliPkg.Ident("NewBidiReadWriter"),
+		"[", method.Input.GoIdent, ", ", method.Output.GoIdent, "](",
+		"ctx,",
+	)
+	g.P(
+		"\t\t\t\tfunc() (*",
+		procframePkg.Ident("Request"),
+		"[", method.Input.GoIdent, "], error) {",
+	)
+	emitNDJSONReadCallback(g, method, "\t\t\t\t\t")
+	g.P("\t\t\t\t},")
+
+	// Write callback
+	g.P(
+		"\t\t\t\tfunc(resp *",
+		procframePkg.Ident("Response"),
+		"[", method.Output.GoIdent, "]) error {",
+	)
+	g.P("\t\t\t\t\tif resp == nil || resp.Msg == nil {")
+	g.P(
+		"\t\t\t\t\t\treturn ",
+		procframePkg.Ident("NewError"),
+		"(",
+		procframePkg.Ident("CodeInternal"),
+		`, "handler sent nil response")`,
+	)
+	g.P("\t\t\t\t\t}")
+	g.P("\t\t\t\t\tvar out []byte")
+	g.P("\t\t\t\t\tvar err error")
+	g.P("\t\t\t\t\tif ", cliPkg.Ident("OutputFormatFromContext"), "(ctx) == ", cliPkg.Ident("OutputJSON"), " {")
+	g.P("\t\t\t\t\t\tout, err = ", protojsonPkg.Ident("MarshalOptions"), "{}.Marshal(resp.Msg)")
+	g.P("\t\t\t\t\t} else {")
+	g.P("\t\t\t\t\t\tout, err = ", protojsonPkg.Ident("MarshalOptions"), "{Multiline: true}.Marshal(resp.Msg)")
+	g.P("\t\t\t\t\t}")
+	g.P("\t\t\t\t\tif err != nil {")
+	g.P("\t\t\t\t\t\treturn err")
+	g.P("\t\t\t\t\t}")
+	g.P("\t\t\t\t\t", fmtPkg.Ident("Fprintln"), "(stdout, string(out))")
+	g.P("\t\t\t\t\treturn nil")
+	g.P("\t\t\t\t},")
+
+	g.P("\t\t\t)")
+
+	// Invoke
+	g.P(
+		"\t\t\treturn ",
+		procframePkg.Ident("InvokeBidi"),
+		"(ctx, ",
+		procframePkg.Ident("CallSpec"),
+		"{",
+		"Procedure: ",
+		fmt.Sprintf("%q", leaf.FullName),
+		", Transport: ",
+		procframePkg.Ident("TransportCLI"),
+		", Shape: ",
+		procframePkg.Ident("CallShapeBidi"),
+		"}, stream, h.", method.GoName, ", ", cliPkg.Ident("InterceptorsFromContext"), "(ctx)...)",
+	)
 }
 
 func emitFlagVars(

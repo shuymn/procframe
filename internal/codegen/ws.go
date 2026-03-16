@@ -31,9 +31,13 @@ func generateWS(
 			continue
 		}
 		procedure := fmt.Sprintf("%q", mi.FullName)
-		if mi.IsStreaming {
+		switch mi.Shape {
+		case shapeServerStream:
 			g.P("\t", wsPkg.Ident("HandleServerStream"), "(s, ", procedure, ", h.", m.GoName, ")")
-		} else {
+		case shapeClientStream, shapeBidi:
+			// WS v2 session protocol handles client-stream and bidi shapes (Theme 3).
+			continue
+		default:
 			g.P("\t", wsPkg.Ident("HandleUnary"), "(s, ", procedure, ", h.", m.GoName, ")")
 		}
 	}

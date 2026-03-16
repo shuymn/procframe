@@ -11,13 +11,25 @@ func generateHandler(g *protogen.GeneratedFile, svc *protogen.Service) {
 	g.P("type ", svc.GoName, "Handler interface {")
 
 	for _, m := range svc.Methods {
-		if m.Desc.IsStreamingServer() {
+		shape := methodShape(m)
+		switch shape {
+		case shapeClientStream:
+			g.P("\t", m.GoName, "(")
+			g.P("\t\t", contextPkg.Ident("Context"), ",")
+			g.P("\t\t", procframePkg.Ident("ClientStream"), "[", m.Input.GoIdent, "],")
+			g.P("\t) (*", procframePkg.Ident("Response"), "[", m.Output.GoIdent, "], error)")
+		case shapeServerStream:
 			g.P("\t", m.GoName, "(")
 			g.P("\t\t", contextPkg.Ident("Context"), ",")
 			g.P("\t\t*", procframePkg.Ident("Request"), "[", m.Input.GoIdent, "],")
 			g.P("\t\t", procframePkg.Ident("ServerStream"), "[", m.Output.GoIdent, "],")
 			g.P("\t) error")
-		} else {
+		case shapeBidi:
+			g.P("\t", m.GoName, "(")
+			g.P("\t\t", contextPkg.Ident("Context"), ",")
+			g.P("\t\t", procframePkg.Ident("BidiStream"), "[", m.Input.GoIdent, ", ", m.Output.GoIdent, "],")
+			g.P("\t) error")
+		default: // unary
 			g.P("\t", m.GoName, "(")
 			g.P("\t\t", contextPkg.Ident("Context"), ",")
 			g.P("\t\t*", procframePkg.Ident("Request"), "[", m.Input.GoIdent, "],")

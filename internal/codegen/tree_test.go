@@ -174,7 +174,7 @@ func TestBuildTree_StreamingMethodIncluded(t *testing.T) {
 			Methods: []methodInfo{
 				{
 					GoName: "Stream", Path: []string{"stream"},
-					CLI: true, IsStreaming: true,
+					CLI: true, Shape: shapeServerStream,
 					InputGoName: "ChatReq", OutputGoName: "ChatChunk",
 					FullName: "/test.v1.ChatService/Stream",
 				},
@@ -191,7 +191,7 @@ func TestBuildTree_StreamingMethodIncluded(t *testing.T) {
 	if stream == nil || stream.Leaf == nil {
 		t.Fatal("want stream leaf")
 	}
-	if !stream.Leaf.IsStreaming {
-		t.Fatal("want IsStreaming=true")
+	if stream.Leaf.Shape != shapeServerStream {
+		t.Fatalf("want Shape=server_stream, got %q", stream.Leaf.Shape)
 	}
 }

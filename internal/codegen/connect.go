@@ -40,25 +40,32 @@ func generateConnect(
 		if !mi.Connect {
 			continue
 		}
-		procedure := fmt.Sprintf("%q", mi.FullName)
-		if mi.IsStreaming {
-			g.P("\tmux.Handle(", connectPkg.Ident("NewServerStreamHandler"), "(")
-			g.P("\t\t", procedure, ",")
-			g.P("\t\th.", m.GoName, ",")
-			g.P("\t\topts...,")
-			g.P("\t))")
-		} else {
-			g.P("\tmux.Handle(", connectPkg.Ident("NewUnaryHandler"), "(")
-			g.P("\t\t", procedure, ",")
-			g.P("\t\th.", m.GoName, ",")
-			g.P("\t\topts...,")
-			g.P("\t))")
-		}
+		emitConnectHandlerRegistration(g, m, mi)
 	}
 
 	g.P("\treturn ", fmt.Sprintf("%q", servicePrefix), ", mux")
 	g.P("}")
 	g.P()
+}
+
+func emitConnectHandlerRegistration(g *protogen.GeneratedFile, m *protogen.Method, mi *methodInfo) {
+	procedure := fmt.Sprintf("%q", mi.FullName)
+	var constructor string
+	switch mi.Shape {
+	case shapeServerStream:
+		constructor = "NewServerStreamHandler"
+	case shapeClientStream:
+		constructor = "NewClientStreamHandler"
+	case shapeBidi:
+		constructor = "NewBidiStreamHandler"
+	default:
+		constructor = "NewUnaryHandler"
+	}
+	g.P("\tmux.Handle(", connectPkg.Ident(constructor), "(")
+	g.P("\t\t", procedure, ",")
+	g.P("\t\th.", m.GoName, ",")
+	g.P("\t\topts...,")
+	g.P("\t))")
 }
 
 // hasConnectMethods reports whether any method in the service has

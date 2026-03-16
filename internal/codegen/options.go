@@ -62,8 +62,8 @@ func extractMethodInfo(m *protogen.Method, svc *protogen.Service) methodInfo {
 		) + "/" + string(
 			m.Desc.Name(),
 		),
-		CLI:         true, // default
-		IsStreaming: m.Desc.IsStreamingServer(),
+		CLI:   true, // default
+		Shape: methodShape(m),
 	}
 
 	applyMethodOptions(&info, m)
@@ -100,6 +100,29 @@ func applyMethodOptions(info *methodInfo, m *protogen.Method) {
 	}
 	if proc.Hidden != nil {
 		info.Hidden = *proc.Hidden
+	}
+}
+
+// Shape constants used by codegen to distinguish RPC shapes.
+const (
+	shapeUnary        = "unary"
+	shapeClientStream = "client_stream"
+	shapeServerStream = "server_stream"
+	shapeBidi         = "bidi"
+)
+
+func methodShape(m *protogen.Method) string {
+	cs := m.Desc.IsStreamingClient()
+	ss := m.Desc.IsStreamingServer()
+	switch {
+	case cs && ss:
+		return shapeBidi
+	case cs:
+		return shapeClientStream
+	case ss:
+		return shapeServerStream
+	default:
+		return shapeUnary
 	}
 }
 
