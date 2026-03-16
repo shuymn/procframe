@@ -41,8 +41,13 @@ message ProcOptions {
   optional bool hidden = 5 [default = false];
 }
 
+message FieldOptions {
+  optional string description = 1;
+}
+
 extend google.protobuf.FieldOptions {
   optional ConfigFieldOptions config = 51001;
+  optional FieldOptions field = 51002;
 }
 
 extend google.protobuf.ServiceOptions {
