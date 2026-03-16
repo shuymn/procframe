@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"strings"
 	"testing"
 
@@ -906,5 +908,252 @@ func BenchmarkSchemaLookupByProcedure(b *testing.B) {
 		if err := runner.Run(b.Context(), args); err != nil {
 			b.Fatalf("unexpected error: %v", err)
 		}
+	}
+}
+
+// --- FourShapeService integration tests ---
+
+// fourShapeHandler implements FourShapeServiceHandler for testing.
+type fourShapeHandler struct{}
+
+func (h *fourShapeHandler) Ping(
+	_ context.Context,
+	req *procframe.Request[testv1.CollectRequest],
+) (*procframe.Response[testv1.CollectResponse], error) {
+	return &procframe.Response[testv1.CollectResponse]{
+		Msg: &testv1.CollectResponse{Count: 1, Items: req.Msg.Item},
+	}, nil
+}
+
+func (h *fourShapeHandler) Collect(
+	_ context.Context,
+	stream procframe.ClientStream[testv1.CollectRequest],
+) (*procframe.Response[testv1.CollectResponse], error) {
+	var items []string
+	for {
+		req, err := stream.Receive()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, req.Msg.Item)
+	}
+	return &procframe.Response[testv1.CollectResponse]{
+		Msg: &testv1.CollectResponse{
+			Count: int32(len(items)), //nolint:gosec // test-only; count is bounded
+			Items: strings.Join(items, ","),
+		},
+	}, nil
+}
+
+func (h *fourShapeHandler) Feed(
+	_ context.Context,
+	req *procframe.Request[testv1.CollectRequest],
+	stream procframe.ServerStream[testv1.ChatReply],
+) error {
+	return stream.Send(&procframe.Response[testv1.ChatReply]{
+		Msg: &testv1.ChatReply{Text: "feed:" + req.Msg.Item},
+	})
+}
+
+func (h *fourShapeHandler) Chat(
+	_ context.Context,
+	stream procframe.BidiStream[testv1.ChatMessage, testv1.ChatReply],
+) error {
+	for {
+		req, err := stream.Receive()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(&procframe.Response[testv1.ChatReply]{
+			Msg: &testv1.ChatReply{Text: "echo:" + req.Msg.Text},
+		}); err != nil {
+			return err
+		}
+	}
+}
+
+func TestIntegration_FourShape_ClientStream(t *testing.T) {
+	t.Parallel()
+
+	stdin := strings.NewReader(
+		"{\"item\":\"a\"}\n{\"item\":\"b\"}\n{\"item\":\"c\"}\n",
+	)
+
+	var stdout bytes.Buffer
+	runner := testv1.NewFourShapeServiceCLIRunner(
+		&fourShapeHandler{},
+		cli.WithStdin(stdin),
+		cli.WithStdout(&stdout),
+		cli.WithStderr(&bytes.Buffer{}),
+	)
+
+	err := runner.Run(t.Context(), []string{
+		"--output", "json",
+		"four", "collect",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := strings.TrimSpace(stdout.String())
+	// With --output json, response should be compact single-line JSON
+	if strings.Count(out, "\n") > 0 {
+		t.Fatalf("want compact single-line JSON, got:\n%s", out)
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		t.Fatalf("invalid JSON output: %v\nraw: %s", err, out)
+	}
+	if !strings.Contains(out, "a,b,c") {
+		t.Fatalf("want items=a,b,c in output, got:\n%s", out)
+	}
+}
+
+func TestIntegration_FourShape_Bidi(t *testing.T) {
+	t.Parallel()
+
+	stdin := strings.NewReader(
+		"{\"text\":\"hello\"}\n{\"text\":\"world\"}\n",
+	)
+
+	var stdout bytes.Buffer
+	runner := testv1.NewFourShapeServiceCLIRunner(
+		&fourShapeHandler{},
+		cli.WithStdin(stdin),
+		cli.WithStdout(&stdout),
+		cli.WithStderr(&bytes.Buffer{}),
+	)
+
+	err := runner.Run(t.Context(), []string{
+		"--output", "json",
+		"four", "chat",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	out := stdout.String()
+	if !strings.Contains(out, "echo:hello") {
+		t.Fatalf("want echo:hello in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "echo:world") {
+		t.Fatalf("want echo:world in output, got:\n%s", out)
+	}
+
+	// With --output json, each response is a compact NDJSON line
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("want 2 NDJSON lines, got %d:\n%s", len(lines), out)
+	}
+	for _, line := range lines {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(strings.TrimSpace(line)), &m); err != nil {
+			t.Fatalf("invalid JSON line: %v\nline: %s", err, line)
+		}
+	}
+}
+
+func TestIntegration_FourShape_ClientStreamRejectsFlags(t *testing.T) {
+	t.Parallel()
+
+	runner := testv1.NewFourShapeServiceCLIRunner(
+		&fourShapeHandler{},
+		cli.WithStdin(strings.NewReader("")),
+		cli.WithStdout(&bytes.Buffer{}),
+		cli.WithStderr(&bytes.Buffer{}),
+	)
+
+	err := runner.Run(t.Context(), []string{"four", "collect", "--item", "x"})
+	if err == nil {
+		t.Fatal("expected error for client-stream with flags")
+	}
+	status, ok := procframe.StatusOf(err)
+	if !ok {
+		t.Fatalf("expected status error, got %T: %v", err, err)
+	}
+	if status.Code != procframe.CodeInvalidArgument {
+		t.Fatalf("want CodeInvalidArgument, got %q", status.Code)
+	}
+}
+
+func TestIntegration_FourShape_BidiRejectsFlags(t *testing.T) {
+	t.Parallel()
+
+	runner := testv1.NewFourShapeServiceCLIRunner(
+		&fourShapeHandler{},
+		cli.WithStdin(strings.NewReader("")),
+		cli.WithStdout(&bytes.Buffer{}),
+		cli.WithStderr(&bytes.Buffer{}),
+	)
+
+	err := runner.Run(t.Context(), []string{"four", "chat", "--text", "hi"})
+	if err == nil {
+		t.Fatal("expected error for bidi with flags")
+	}
+	status, ok := procframe.StatusOf(err)
+	if !ok {
+		t.Fatalf("expected status error, got %T: %v", err, err)
+	}
+	if status.Code != procframe.CodeInvalidArgument {
+		t.Fatalf("want CodeInvalidArgument, got %q", status.Code)
+	}
+}
+
+func TestIntegration_FourShape_ClientStreamRejectsJSON(t *testing.T) {
+	t.Parallel()
+
+	runner := testv1.NewFourShapeServiceCLIRunner(
+		&fourShapeHandler{},
+		cli.WithStdin(strings.NewReader("")),
+		cli.WithStdout(&bytes.Buffer{}),
+		cli.WithStderr(&bytes.Buffer{}),
+	)
+
+	err := runner.Run(t.Context(), []string{
+		"--json", `{"item":"x"}`,
+		"four", "collect",
+	})
+	if err == nil {
+		t.Fatal("expected error for client-stream with --json")
+	}
+	status, ok := procframe.StatusOf(err)
+	if !ok {
+		t.Fatalf("expected status error, got %T: %v", err, err)
+	}
+	if status.Code != procframe.CodeInvalidArgument {
+		t.Fatalf("want CodeInvalidArgument, got %q", status.Code)
+	}
+}
+
+func TestIntegration_FourShape_BidiRejectsJSON(t *testing.T) {
+	t.Parallel()
+
+	runner := testv1.NewFourShapeServiceCLIRunner(
+		&fourShapeHandler{},
+		cli.WithStdin(strings.NewReader("")),
+		cli.WithStdout(&bytes.Buffer{}),
+		cli.WithStderr(&bytes.Buffer{}),
+	)
+
+	err := runner.Run(t.Context(), []string{
+		"--json", `{"text":"hi"}`,
+		"four", "chat",
+	})
+	if err == nil {
+		t.Fatal("expected error for bidi with --json")
+	}
+	status, ok := procframe.StatusOf(err)
+	if !ok {
+		t.Fatalf("expected status error, got %T: %v", err, err)
+	}
+	if status.Code != procframe.CodeInvalidArgument {
+		t.Fatalf("want CodeInvalidArgument, got %q", status.Code)
 	}
 }

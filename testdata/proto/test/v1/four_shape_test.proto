@@ -1,0 +1,90 @@
+syntax = "proto3";
+
+package test.v1;
+
+import "procframe/options/v1/options.proto";
+
+option go_package = "github.com/shuymn/procframe/internal/gen/test/v1;testv1";
+
+// CollectRequest is a single inbound message for client-stream RPCs.
+message CollectRequest {
+  string item = 1 [(procframe.options.v1.field).description = "Item to collect"];
+}
+
+// CollectResponse is the aggregated response for client-stream RPCs.
+message CollectResponse {
+  int32 count = 1;
+  string items = 2;
+}
+
+// ChatMessage is used for bidirectional streaming.
+message ChatMessage {
+  string text = 1 [(procframe.options.v1.field).description = "Chat text"];
+}
+
+// ChatReply is a single outbound message for bidi RPCs.
+message ChatReply {
+  string text = 1;
+}
+
+// FourShapeService demonstrates all four RPC shapes.
+service FourShapeService {
+  option (procframe.options.v1.cli_group) = {
+    path: {
+      segments: ["four"]
+    }
+    summary: "Four-shape operations"
+  };
+
+  // Unary echo — reuses EchoService pattern.
+  rpc Ping(CollectRequest) returns (CollectResponse) {
+    option (procframe.options.v1.proc) = {
+      cli_path: {
+        segments: ["ping"]
+      }
+      connect: {
+        enabled: true
+      }
+      summary: "Ping once"
+    };
+  }
+
+  // Client-streaming — collect items.
+  rpc Collect(stream CollectRequest) returns (CollectResponse) {
+    option (procframe.options.v1.proc) = {
+      cli_path: {
+        segments: ["collect"]
+      }
+      connect: {
+        enabled: true
+      }
+      summary: "Collect items from stdin"
+    };
+  }
+
+  // Server-streaming — emit items.
+  rpc Feed(CollectRequest) returns (stream ChatReply) {
+    option (procframe.options.v1.proc) = {
+      cli_path: {
+        segments: ["feed"]
+      }
+      connect: {
+        enabled: true
+      }
+      summary: "Feed replies"
+    };
+  }
+
+  // Bidirectional streaming — chat.
+  rpc Chat(stream ChatMessage) returns (stream ChatReply) {
+    option (procframe.options.v1.proc) = {
+      cli_path: {
+        segments: ["chat"]
+      }
+      connect: {
+        enabled: true
+      }
+      summary: "Bidirectional chat"
+    };
+  }
+}

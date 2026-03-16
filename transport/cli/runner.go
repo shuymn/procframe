@@ -17,6 +17,7 @@ import (
 type Runner struct {
 	root         *Node
 	name         string
+	stdin        io.Reader
 	stdout       io.Writer
 	stderr       io.Writer
 	errorMapper  procframe.ErrorMapper
@@ -25,6 +26,11 @@ type Runner struct {
 
 // Option configures a [Runner].
 type Option func(*Runner)
+
+// WithStdin sets the reader for standard input.
+func WithStdin(reader io.Reader) Option {
+	return func(r *Runner) { r.stdin = reader }
+}
 
 // WithStdout sets the writer for standard output.
 func WithStdout(w io.Writer) Option {
@@ -58,6 +64,7 @@ func NewRunner(root *Node, opts ...Option) *Runner {
 	r := &Runner{
 		root:   root,
 		name:   filepath.Base(os.Args[0]),
+		stdin:  os.Stdin,
 		stdout: os.Stdout,
 		stderr: os.Stderr,
 	}
@@ -77,6 +84,7 @@ func (r *Runner) Stderr() io.Writer { return r.stderr }
 // matched leaf command. Returns nil on success or help display.
 func (r *Runner) Run(ctx context.Context, args []string) error {
 	ctx = withInterceptors(ctx, r.interceptors)
+	ctx = withStdin(ctx, r.stdin)
 	remaining, gf, err := preParseGlobalFlags(args)
 	if err != nil {
 		return err
@@ -102,6 +110,22 @@ func (r *Runner) Run(ctx context.Context, args []string) error {
 		return mappedErr
 	}
 	return nil
+}
+
+type stdinKey struct{}
+
+func withStdin(ctx context.Context, stdin io.Reader) context.Context {
+	return context.WithValue(ctx, stdinKey{}, stdin)
+}
+
+// StdinFromContext returns the runner stdin reader, if any.
+func StdinFromContext(ctx context.Context) io.Reader {
+	val := ctx.Value(stdinKey{})
+	stdin, ok := val.(io.Reader)
+	if !ok {
+		return os.Stdin
+	}
+	return stdin
 }
 
 type interceptorsKey struct{}
