@@ -690,3 +690,92 @@ func TestIntegration_JSONInput_Streaming(t *testing.T) {
 		t.Fatalf("want 2 chunks, got:\n%s", stdout.String())
 	}
 }
+
+// --- Help metadata propagation ---
+
+func TestIntegration_HelpShowsFieldDescriptions(t *testing.T) {
+	t.Parallel()
+
+	var stderr bytes.Buffer
+	runner := testv1.NewEchoServiceCLIRunner(
+		&echoHandler{},
+		cli.WithStdout(&bytes.Buffer{}),
+		cli.WithStderr(&stderr),
+	)
+
+	err := runner.Run(t.Context(), []string{"echo", "run", "--help"})
+	if err != nil {
+		t.Fatalf("--help should not error, got: %v", err)
+	}
+
+	out := stderr.String()
+	for _, want := range []string{
+		"The message to echo back",
+		"Number of times to repeat",
+		"Convert to uppercase",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("want %q in help output, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestIntegration_HelpShowsEnumValues(t *testing.T) {
+	t.Parallel()
+
+	var stderr bytes.Buffer
+	runner := testv1.NewPRServiceCLIRunner(
+		&prHandler{},
+		cli.WithStdout(&bytes.Buffer{}),
+		cli.WithStderr(&stderr),
+	)
+
+	err := runner.Run(t.Context(), []string{"repo", "pr", "--help"})
+	if err != nil {
+		t.Fatalf("--help should not error, got: %v", err)
+	}
+
+	out := stderr.String()
+	if !strings.Contains(out, "values: open, closed") {
+		t.Fatalf("want enum values in help output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Filter by PR state") {
+		t.Fatalf("want field description in help output, got:\n%s", out)
+	}
+}
+
+func TestIntegration_SchemaContainsDescription(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	runner := testv1.NewEchoServiceCLIRunner(
+		&echoHandler{},
+		cli.WithStdout(&stdout),
+		cli.WithStderr(&bytes.Buffer{}),
+	)
+
+	err := runner.Run(t.Context(), []string{"schema", "echo", "run"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var info cli.CommandInfo
+	if err := json.Unmarshal(stdout.Bytes(), &info); err != nil {
+		t.Fatalf("invalid JSON: %v\nraw: %s", err, stdout.String())
+	}
+
+	wantDescs := map[string]string{
+		"message":   "The message to echo back",
+		"count":     "Number of times to repeat",
+		"uppercase": "Convert to uppercase",
+	}
+	for _, f := range info.Flags {
+		want, ok := wantDescs[f.Name]
+		if !ok {
+			continue
+		}
+		if f.Description != want {
+			t.Errorf("flag %q: want description %q, got %q", f.Name, want, f.Description)
+		}
+	}
+}
