@@ -15,10 +15,11 @@ import (
 
 // Runner holds a CLI command tree and dispatches execution.
 type Runner struct {
-	root   *Node
-	name   string
-	stdout io.Writer
-	stderr io.Writer
+	root        *Node
+	name        string
+	stdout      io.Writer
+	stderr      io.Writer
+	errorMapper procframe.ErrorMapper
 }
 
 // Option configures a [Runner].
@@ -37,6 +38,11 @@ func WithStderr(w io.Writer) Option {
 // WithName sets the program name shown in usage and error messages.
 func WithName(name string) Option {
 	return func(r *Runner) { r.name = name }
+}
+
+// WithErrorMapper sets the boundary mapper used to classify errors.
+func WithErrorMapper(mapper procframe.ErrorMapper) Option {
+	return func(r *Runner) { r.errorMapper = mapper }
 }
 
 // NewRunner constructs a [Runner] from a root group node.
@@ -79,13 +85,32 @@ func (r *Runner) Run(ctx context.Context, args []string) error {
 	}
 	runErr := r.traverse(ctx, r.root, remaining, path)
 	if runErr != nil {
-		var pfErr procframe.Error
-		if errors.As(runErr, &pfErr) && OutputFormatFromContext(ctx) == OutputJSON {
+		status, ok, mappedErr := r.mapError(runErr)
+		if ok && OutputFormatFromContext(ctx) == OutputJSON {
 			//nolint:errcheck // best-effort structured error output
-			FormatErrorJSON(r.stderr, pfErr)
+			FormatErrorJSON(r.stderr, status)
 		}
+		return mappedErr
 	}
-	return runErr
+	return nil
+}
+
+func (r *Runner) mapError(err error) (procframe.Status, bool, error) {
+	if status, ok := procframe.StatusOf(err); ok {
+		return status, true, err
+	}
+	if r.errorMapper == nil {
+		return procframe.Status{}, false, err
+	}
+	status, ok := r.errorMapper(err)
+	if !ok {
+		return procframe.Status{}, false, err
+	}
+	mapped := procframe.WrapError(status.Code, status.Message, err)
+	if status.Retryable {
+		mapped = mapped.WithRetryable()
+	}
+	return status, true, mapped
 }
 
 // errHelp is a sentinel indicating that help was displayed.

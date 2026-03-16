@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 
@@ -136,15 +135,15 @@ func TestIntegration_HandlerError(t *testing.T) {
 		t.Fatal("expected error from handler")
 	}
 
-	var pfErr procframe.Error
-	if !errors.As(err, &pfErr) {
-		t.Fatalf("expected procframe.Error, got %T: %v", err, err)
+	status, ok := procframe.StatusOf(err)
+	if !ok {
+		t.Fatalf("expected status error, got %T: %v", err, err)
 	}
-	if pfErr.Code() != procframe.CodeNotFound {
-		t.Fatalf("want CodeNotFound, got %q", pfErr.Code())
+	if status.Code != procframe.CodeNotFound {
+		t.Fatalf("want CodeNotFound, got %q", status.Code)
 	}
 
-	exitCode := cli.ExitCode(pfErr.Code())
+	exitCode := cli.ExitCode(status.Code)
 	if exitCode != 3 {
 		t.Fatalf("want exit code 3, got %d", exitCode)
 	}
@@ -338,12 +337,12 @@ func TestIntegration_JSONAndFlagsConflict(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for --json + flags")
 	}
-	var pfErr procframe.Error
-	if !errors.As(err, &pfErr) {
-		t.Fatalf("expected procframe.Error, got %T: %v", err, err)
+	status, ok := procframe.StatusOf(err)
+	if !ok {
+		t.Fatalf("expected status error, got %T: %v", err, err)
 	}
-	if pfErr.Code() != procframe.CodeInvalidArgument {
-		t.Fatalf("want CodeInvalidArgument, got %q", pfErr.Code())
+	if status.Code != procframe.CodeInvalidArgument {
+		t.Fatalf("want CodeInvalidArgument, got %q", status.Code)
 	}
 	if !strings.Contains(err.Error(), "--json cannot be combined with flags") {
 		t.Fatalf("want conflict error, got: %v", err)
@@ -538,12 +537,12 @@ func TestIntegration_ExitCode(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	var pfErr procframe.Error
-	if !errors.As(err, &pfErr) {
-		t.Fatalf("expected procframe.Error, got %T", err)
+	status, ok := procframe.StatusOf(err)
+	if !ok {
+		t.Fatalf("expected status error, got %T", err)
 	}
 
-	code := cli.ExitCode(pfErr.Code())
+	code := cli.ExitCode(status.Code)
 	if code != 3 { // CodeNotFound → 3
 		t.Fatalf("want exit code 3, got %d", code)
 	}
@@ -563,12 +562,12 @@ func TestIntegration_StreamingExitCode(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	var pfErr procframe.Error
-	if !errors.As(err, &pfErr) {
-		t.Fatalf("expected procframe.Error, got %T", err)
+	status, ok := procframe.StatusOf(err)
+	if !ok {
+		t.Fatalf("expected status error, got %T", err)
 	}
-	if cli.ExitCode(pfErr.Code()) != 8 { // CodeUnavailable → 8
-		t.Fatalf("want exit code 8, got %d", cli.ExitCode(pfErr.Code()))
+	if cli.ExitCode(status.Code) != 8 { // CodeUnavailable → 8
+		t.Fatalf("want exit code 8, got %d", cli.ExitCode(status.Code))
 	}
 }
 
@@ -582,6 +581,7 @@ func TestIntegration_StructuredError_OutputJSON(t *testing.T) {
 		&errorHandler{},
 		cli.WithStdout(&bytes.Buffer{}),
 		cli.WithStderr(&stderr),
+		cli.WithErrorMapper(procframe.StatusOf),
 	)
 
 	err := runner.Run(t.Context(), []string{
@@ -657,12 +657,12 @@ func TestIntegration_NilResponse(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for nil response")
 	}
-	var pfErr procframe.Error
-	if !errors.As(err, &pfErr) {
-		t.Fatalf("expected procframe.Error, got %T: %v", err, err)
+	status, ok := procframe.StatusOf(err)
+	if !ok {
+		t.Fatalf("expected status error, got %T: %v", err, err)
 	}
-	if pfErr.Code() != procframe.CodeInternal {
-		t.Fatalf("want CodeInternal, got %q", pfErr.Code())
+	if status.Code != procframe.CodeInternal {
+		t.Fatalf("want CodeInternal, got %q", status.Code)
 	}
 }
 

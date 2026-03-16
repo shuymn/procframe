@@ -253,12 +253,12 @@ func TestRunner_HandlerError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from handler")
 	}
-	var pfErr procframe.Error
-	if !errors.As(err, &pfErr) {
-		t.Fatalf("expected procframe.Error, got %T: %v", err, err)
+	status, ok := procframe.StatusOf(err)
+	if !ok {
+		t.Fatalf("expected status error, got %T: %v", err, err)
 	}
-	if pfErr.Code() != procframe.CodeNotFound {
-		t.Fatalf("want CodeNotFound, got %q", pfErr.Code())
+	if status.Code != procframe.CodeNotFound {
+		t.Fatalf("want CodeNotFound, got %q", status.Code)
 	}
 }
 
@@ -457,7 +457,11 @@ func TestRunner_StructuredErrorJSON(t *testing.T) {
 		},
 	}
 	var stderr bytes.Buffer
-	r := cli.NewRunner(root, cli.WithStdout(&bytes.Buffer{}), cli.WithStderr(&stderr))
+	r := cli.NewRunner(root,
+		cli.WithStdout(&bytes.Buffer{}),
+		cli.WithStderr(&stderr),
+		cli.WithErrorMapper(procframe.StatusOf),
+	)
 	err := r.Run(t.Context(), []string{"--output", "json", "cmd"})
 	if err == nil {
 		t.Fatal("expected error")
@@ -490,6 +494,84 @@ func TestRunner_StructuredErrorNotWrittenWithoutOutputJSON(t *testing.T) {
 		t.Fatalf("want no structured error without --output json, got:\n%s", stderr.String())
 	}
 }
+
+func TestRunner_StructuredErrorJSON_UsesCustomMapper(t *testing.T) {
+	t.Parallel()
+
+	domainErr := domainUnavailableError{}
+	root := &cli.Node{
+		Children: map[string]*cli.Node{
+			"cmd": {
+				Segment: "cmd",
+				Run: func(context.Context, []string, io.Writer) error {
+					return domainErr
+				},
+			},
+		},
+	}
+	var stderr bytes.Buffer
+	r := cli.NewRunner(
+		root,
+		cli.WithStdout(&bytes.Buffer{}),
+		cli.WithStderr(&stderr),
+		cli.WithErrorMapper(func(err error) (procframe.Status, bool) {
+			if errors.Is(err, domainErr) {
+				return procframe.Status{
+					Code:      procframe.CodeUnavailable,
+					Message:   "mapped unavailable",
+					Retryable: true,
+				}, true
+			}
+			return procframe.Status{}, false
+		}),
+	)
+
+	err := r.Run(t.Context(), []string{"--output", "json", "cmd"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	status, ok := procframe.StatusOf(err)
+	if !ok {
+		t.Fatalf("want mapped error returned as status error, got %T: %v", err, err)
+	}
+	if status.Code != procframe.CodeUnavailable {
+		t.Fatalf("want CodeUnavailable, got %q", status.Code)
+	}
+	if !strings.Contains(stderr.String(), `"code":"unavailable"`) {
+		t.Fatalf("want mapped structured error on stderr, got:\n%s", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), `"retryable":true`) {
+		t.Fatalf("want retryable=true in mapped error, got:\n%s", stderr.String())
+	}
+}
+
+func TestRunner_PlainErrorNotStructuredWithoutMapper(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Node{
+		Children: map[string]*cli.Node{
+			"cmd": {
+				Segment: "cmd",
+				Run: func(context.Context, []string, io.Writer) error {
+					return domainUnavailableError{}
+				},
+			},
+		},
+	}
+	var stderr bytes.Buffer
+	r := cli.NewRunner(root, cli.WithStdout(&bytes.Buffer{}), cli.WithStderr(&stderr))
+	err := r.Run(t.Context(), []string{"--output", "json", "cmd"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("want no structured error for plain error without mapper, got:\n%s", stderr.String())
+	}
+}
+
+type domainUnavailableError struct{}
+
+func (domainUnavailableError) Error() string { return "domain unavailable" }
 
 func TestRunner_HelpShowsProgramName(t *testing.T) {
 	t.Parallel()

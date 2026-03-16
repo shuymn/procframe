@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 
 	"github.com/shuymn/procframe"
@@ -64,18 +63,21 @@ type structuredErrorBody struct {
 }
 
 // FormatErrorJSON writes a structured error to w as a single JSON line.
-func FormatErrorJSON(w io.Writer, err procframe.Error) error {
+func FormatErrorJSON(w io.Writer, status procframe.Status) error {
 	se := structuredError{
 		Error: structuredErrorBody{
-			Code:      string(err.Code()),
-			Message:   err.Message(),
-			Retryable: err.IsRetryable(),
+			Code:      string(status.Code),
+			Message:   status.Message,
+			Retryable: status.Retryable,
 		},
 	}
 	data, merr := json.Marshal(se)
 	if merr != nil {
 		return merr
 	}
-	_, werr := fmt.Fprintln(w, string(data))
+	if _, werr := w.Write(data); werr != nil {
+		return werr
+	}
+	_, werr := w.Write([]byte("\n"))
 	return werr
 }

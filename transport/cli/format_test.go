@@ -54,7 +54,10 @@ func TestFormatErrorJSON(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	err := cli.FormatErrorJSON(&buf, procframe.NewError(procframe.CodeNotFound, "resource not found"))
+	err := cli.FormatErrorJSON(&buf, procframe.Status{
+		Code:    procframe.CodeNotFound,
+		Message: "resource not found",
+	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -86,7 +89,11 @@ func TestFormatErrorJSON_Retryable(t *testing.T) {
 	var buf bytes.Buffer
 	err := cli.FormatErrorJSON(
 		&buf,
-		procframe.NewError(procframe.CodeUnavailable, "service unavailable").WithRetryable(),
+		procframe.Status{
+			Code:      procframe.CodeUnavailable,
+			Message:   "service unavailable",
+			Retryable: true,
+		},
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
