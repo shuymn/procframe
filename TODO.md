@@ -2,25 +2,11 @@
 
 ## Open Questions
 
-- Question: CLI field-to-flag 変換規則
+- Question: HTTP transport のスコープ: minimal JSON-over-HTTP vs Connect Protocol (+ gRPC)?
   - Class: `risk-bearing`
-  - Resolution: `decision`
-  - Status: `resolved`
-  - Decision:
-    - flag naming: snake_case → kebab-case (`log_level` → `--log-level`)
-    - enum: 型名プレフィックス除去 + lowercase, case-insensitive 受付 (`PULL_REQUEST_STATE_OPEN` → `open`)。strip 後に値が衝突したら codegen error
-    - repeated: 複数回指定 (`--tag foo --tag bar`)
-    - nested message (non-bind_into): flat flag 生成なし、`--json` fallback のみ
-
-- Question: runtime error モデル
-  - Class: `risk-bearing`
-  - Resolution: `decision`
-  - Status: `resolved`
-  - Decision:
-    - handler は plain `error` を返す
-    - procframe の構造化 error は `Status` と `StatusError` で表現する
-    - transport は boundary で `ErrorMapper` により `error` を `Status` に写像する
-    - デフォルトでは mapper なし。アプリケーションが明示的に `ErrorMapper` を設定する
+  - Resolution: `spike`
+  - Status: `escalated`
+  - Note: Connect なら HTTP + gRPC を同時に達成できるが、CLI の flat flag 構造 (bind_into 展開, repeated, enum 文字列マッチ) と gRPC のフル protobuf メッセージ受信は本質的に異なるインターフェース。同じ proto 定義から両方の transport コードを矛盾なく生成できるか要検証。
 
 ## Deferred Questions
 
@@ -37,73 +23,19 @@
 
 ## Themes
 
-- [x] Theme: Runtime core + options.proto
-  - Outcome: procframe パッケージが Go モジュールとしてコンパイル可能になり、options.proto が protoc で import 可能になる
-  - Goal: Request[T], Response[T], ServerStream[T], Meta, Status/StatusError, Code 型と options.proto の提供
-  - Must Not Break: なし (新規プロジェクト)
-  - Non-goals: codegen, transport 実装, config 実装
+- [x] Theme: Help/Schema メタデータ伝播
+  - Outcome: CLI の help と schema 出力が proto 定義のメタデータを表示する
+  - Goal: proto コメントと enum 値を生成コードの help テキストと schema JSON に反映する
+  - Must Not Break: 既存の flag パース動作, schema サブコマンドの JSON 構造の後方互換性, codegen の既存出力
+  - Non-goals: 新しい proto option の追加, 新しい flag 型, help 以外の CLI 機能変更, nested/map の flat flag 化, config bootstrap flags の help 表示
   - Acceptance (EARS):
-    - When `go build ./...` を実行すると procframe パッケージがエラーなくコンパイルされる
-    - When options.proto に対して lint を実行すると valid と判定される
-    - When 外部 proto ファイルが options.proto を import して `protoc` を実行すると成功する
-  - Evidence: `run=task check; oracle=compile success + lint pass; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
-  - Gates: `static`
-  - Executable doc: `go build ./...` passes; options.proto が protoc で正常に処理される
-  - Why not split vertically further?: Runtime types と options.proto は相互に意味を持ち、片方だけでは外部から観測可能な前進にならない
-  - Escalate if: proto2 extension の `retention = RETENTION_SOURCE` が protoc バージョン依存で動かない場合
-
-- [x] Theme: Codegen + CLI unary end-to-end
-  - Outcome: ユーザーが service proto を書き、protoc-gen-procframe-go を実行し、handler を実装し、CLI unary コマンドを flat flags で実行できる
-  - Goal: protoc-gen-procframe-go による handler interface + CLI runner 生成、CLI unary 実行の end-to-end 動作
-  - Must Not Break: Theme 1 の public API (Request, Response, ServerStream, Meta, Status/StatusError, Code)
-  - Non-goals: server-stream CLI, --json 入力, schema コマンド, --output json, WS codegen, config codegen
-  - Acceptance (EARS):
-    - When テスト用 service proto に対して `protoc --procframe-go_out=...` を実行すると handler interface と CLI runner のコードが生成される
-    - When 生成コードを含むパッケージに対して `go build` を実行するとコンパイルが成功する
-    - When 生成された CLI runner で unary コマンドを flat flags 付きで実行すると handler が呼ばれ結果が stdout に出力される
-    - When group flags (bind_into) を指定すると対応する request field に値が注入される
-    - When enum field の strip 後の値が衝突する proto を codegen すると error になる
-    - When help を表示すると stderr に出力される
-  - Evidence: `run=go test ./internal/codegen/... && go test ./transport/cli/...; oracle=integration test pass; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
+    - When a proto field has a leading comment, the generated flag usage string shall include it
+    - When a field is an enum type, the help output shall list allowed values
+    - When schema subcommand is run, the output shall include description and enum values for each field
+    - When a bind_into group has fields with metadata, the group flags shall also show metadata
+    - When a leaf command is invoked with --help, the help output shall show flag definitions with usage text
+  - Evidence: `run=task check; oracle=generated help text contains proto comments and enum values; schema JSON contains description/enum; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
   - Gates: `static`, `integration`
-  - Executable doc: fixture proto → protoc-gen-procframe-go → compile → CLI 実行 → 期待出力検証の integration test
-  - Why not split vertically further?: handler interface 生成だけでは transport なしに動作確認できず、外部から観測可能な前進にならない。codegen と CLI transport は最初の vertical slice として不可分
-  - Escalate if: protoc plugin API (protogen) で procframe custom option の読み取りに制約がある場合
-
-- [x] Theme: CLI server-stream + agent features
-  - Outcome: CLI で server-stream が動作し、agent 向け機能 (--json, schema, --output json, 構造化 error, exit code) が使える
-  - Goal: server-stream CLI 出力、--json raw payload 入力、schema サブコマンド、--output json 構造化出力、exit code mapping、構造化 error 出力
-  - Must Not Break: Theme 2 の unary CLI 動作 (flat flags + text output)
-  - Non-goals: NDJSON pagination, field mask, --dry-run, --sanitize, MCP, batch/stdin pipe, error の suggested_action/failed_input
-  - Acceptance (EARS):
-    - When server-stream handler を CLI で実行すると chunk ごとに stdout に出力される
-    - When `--json '{...}'` を指定すると protojson が直接 unmarshal されて request になる
-    - When `--json` と flags を同時指定すると error が返る
-    - When `app schema <procedure-path>` を実行すると request/response の型情報が JSON で stdout に出力される
-    - When `--output json` を指定すると response が protojson で stdout に出力される
-    - When `--output json` で server-stream を実行すると NDJSON (1 chunk 1 行) で出力される
-    - When handler が Error を返すと対応する exit code で終了する
-    - When `--output json` で error が発生すると stderr に `{"error":{"code":"...","message":"...","retryable":...}}` が出力される
-  - Evidence: `run=go test ./transport/cli/...; oracle=integration test pass; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
-  - Gates: `static`, `integration`
-  - Executable doc: --json 入力 → 期待 request 検証, schema → 期待 JSON 検証, --output json → 期待出力検証, server-stream → NDJSON 検証, error → exit code + stderr JSON 検証の integration test
-  - Why not split vertically further?: --json, schema, --output json は agent workflow として一体で使われ、個別提供では agent が self-discovery → structured I/O の流れを完結できない
-  - Escalate if: proto descriptor から JSON Schema 相当の型情報を codegen 時に静的生成する方法に制約がある場合
-
-- [x] Theme: Config system
-  - Outcome: ユーザーが config.proto を定義し、JSON file + env + bootstrap CLI flags から immutable config を生成できる
-  - Goal: `config.proto` から `LoadRuntimeConfig(argv []string) (*RuntimeConfig, []string, error)` と generated runtime config pointer に対する secret-safe `fmt.Formatter` 実装を生成し、defaults → file(JSON) → env → bootstrap CLI → validate → immutable の merge chain を成立させる
-  - Must Not Break: Theme 1 の public API; Theme 2/3 の codegen plugin 生成物と CLI runtime
-  - Non-goals: YAML/TOML, config hot reload, config watch, 複数 config ファイル, config validation framework, scalar/enum 以外の config field support, env 名自動導出
-  - Acceptance (EARS):
-    - When file 名が `config.proto` で top-level message に ConfigFieldOptions を付けた scalar/enum field があるとき protoc-gen-procframe-go が LoadRuntimeConfig 関数と generated runtime config pointer に対する secret-safe `fmt.Formatter` 実装を生成する
-    - When JSON config ファイル、環境変数、bootstrap CLI flags を組み合わせて LoadRuntimeConfig を呼ぶと defaults → file → env → bootstrap の優先順位で merge された config が返る
-    - When `required=true` のフィールドが未設定のとき error が返る
-    - When `bootstrap=true` のフィールドは argv 先頭の連続 token だけ bootstrap flags として parse され、最初の非-bootstrap token 以降が procedure args として返る
-    - When `secret=true` のフィールドを持つ generated runtime config pointer を `fmt` 経由で出力しても secret 値は露出せず、error 文脈でも値が露出しない
-    - If config option が scalar/enum 以外の field、重複 env 名、重複 bootstrap flag、または parse 不能な `default_string` に付いているとき codegen error になる
-  - Evidence: `run=task proto:gen:test && go test ./internal/codegen/... && go test ./config/... && go test ./transport/cli/...; oracle=config fixture generation + integration test pass + CLI regression pass; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
-  - Gates: `static`, `integration`
-  - Executable doc: `testdata/proto/test/v1/config.proto` → `task proto:gen:test` → generated `LoadRuntimeConfig` / pointer-based `fmt.Formatter` → JSON file + env vars + bootstrap flags + procedure args を使う integration test → 期待 config 値、format 時の secret mask、残余 argv を検証
-  - Why not split vertically further?: config の merge chain と generated API (`LoadRuntimeConfig`, generated runtime config pointer の secret-safe `fmt.Formatter`) は file/env/bootstrap/validate が揃って初めて外から観測できる前進になるため、部分提供では config システムとして成立しない
-  - Escalate if: bootstrap CLI の argv prefix-only 規則で procedure args と安全に分離できない入力が発見された場合
+  - Executable doc: TestIntegration_HelpShowsFieldDescriptions, TestIntegration_HelpShowsEnumValues, TestIntegration_SchemaContainsDescription
+  - Why not split vertically further?: 全メタデータ伝播は同一の codegen パス (field descriptor → flag registration + schema struct) を共有し、出力面も help text + schema JSON の2つだけ。メタデータ種別で分割すると同じコードパスを複数回変更することになる。
+  - Escalate if: protogen API が proto ソースコメントの取得を十分にサポートしていない場合
