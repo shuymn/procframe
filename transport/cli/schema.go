@@ -16,5 +16,6 @@ type SchemaField struct {
 	Type        string   `json:"type"`
 	Description string   `json:"description,omitempty"`
 	Repeated    bool     `json:"repeated,omitempty"`
+	Map         bool     `json:"map,omitempty"`
 	EnumValues  []string `json:"enum_values,omitempty"`
 }
