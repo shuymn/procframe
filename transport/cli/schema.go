@@ -1,23 +1,19 @@
 package cli
 
-// SchemaInfo describes a single procedure's type information.
-type SchemaInfo struct {
+// CommandInfo describes a single CLI command's type information.
+type CommandInfo struct {
+	Command   string        `json:"command"`
+	Summary   string        `json:"summary,omitempty"`
 	Procedure string        `json:"procedure"`
-	Request   SchemaMessage `json:"request"`
-	Response  SchemaMessage `json:"response"`
-	Streaming bool          `json:"streaming"`
-}
-
-// SchemaMessage describes a protobuf message type.
-type SchemaMessage struct {
-	FullName string        `json:"full_name"`
-	Fields   []SchemaField `json:"fields"`
+	Flags     []SchemaField `json:"flags"`
+	Output    []SchemaField `json:"output"`
+	Streaming bool          `json:"streaming,omitempty"`
 }
 
 // SchemaField describes a single field within a message.
 type SchemaField struct {
 	Name       string   `json:"name"`
 	Type       string   `json:"type"`
-	Repeated   bool     `json:"repeated"`
+	Repeated   bool     `json:"repeated,omitempty"`
 	EnumValues []string `json:"enum_values,omitempty"`
 }

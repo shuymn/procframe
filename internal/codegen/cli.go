@@ -2,6 +2,7 @@ package codegen
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -17,6 +18,7 @@ var (
 	flagPkg         = protogen.GoImportPath("flag")
 	fmtPkg          = protogen.GoImportPath("fmt")
 	ioPkg           = protogen.GoImportPath("io")
+	stringsPkg      = protogen.GoImportPath("strings")
 	protojsonPkg    = protogen.GoImportPath("google.golang.org/protobuf/encoding/protojson")
 	procframePkg    = protogen.GoImportPath("github.com/shuymn/procframe")
 	cliPkg          = protogen.GoImportPath("github.com/shuymn/procframe/transport/cli")
@@ -685,7 +687,7 @@ func emitSchemaMap(
 	svc *protogen.Service,
 	svcInfo *serviceInfo,
 ) {
-	g.P("\t\t\tschemas := map[string]", cliPkg.Ident("SchemaInfo"), "{")
+	g.P("\t\t\tschemas := map[string]", cliPkg.Ident("CommandInfo"), "{")
 	for _, mi := range svcInfo.Methods {
 		if !mi.CLI {
 			continue
@@ -694,10 +696,15 @@ func emitSchemaMap(
 		if method == nil {
 			continue
 		}
-		g.P("\t\t\t\t", fmt.Sprintf("%q", mi.FullName), ": {")
+		cmdPath := strings.Join(slices.Concat(svcInfo.Path, mi.Path), " ")
+		g.P("\t\t\t\t", fmt.Sprintf("%q", cmdPath), ": {")
+		g.P("\t\t\t\t\tCommand: ", fmt.Sprintf("%q", cmdPath), ",")
+		if mi.Summary != "" {
+			g.P("\t\t\t\t\tSummary: ", fmt.Sprintf("%q", mi.Summary), ",")
+		}
 		g.P("\t\t\t\t\tProcedure: ", fmt.Sprintf("%q", mi.FullName), ",")
-		emitSchemaMessage(g, method.Input, "Request", "\t\t\t\t\t")
-		emitSchemaMessage(g, method.Output, "Response", "\t\t\t\t\t")
+		emitSchemaFields(g, method.Input, "Flags", "\t\t\t\t\t")
+		emitSchemaFields(g, method.Output, "Output", "\t\t\t\t\t")
 		if mi.IsStreaming {
 			g.P("\t\t\t\t\tStreaming: true,")
 		}
@@ -709,12 +716,23 @@ func emitSchemaMap(
 // emitSchemaLookup emits the lookup/output logic for the schema command.
 func emitSchemaLookup(g *protogen.GeneratedFile) {
 	g.P("\t\t\tif len(args) > 0 {")
-	g.P("\t\t\t\tinfo, ok := schemas[args[0]]")
+	g.P("\t\t\t\tkey := ", stringsPkg.Ident("Join"), "(args, \" \")")
+	g.P("\t\t\t\tinfo, ok := schemas[key]")
+	g.P("\t\t\t\tif !ok {")
+	// Fallback: linear scan by procedure name
+	g.P("\t\t\t\t\tfor _, v := range schemas {")
+	g.P("\t\t\t\t\t\tif v.Procedure == key {")
+	g.P("\t\t\t\t\t\t\tinfo = v")
+	g.P("\t\t\t\t\t\t\tok = true")
+	g.P("\t\t\t\t\t\t\tbreak")
+	g.P("\t\t\t\t\t\t}")
+	g.P("\t\t\t\t\t}")
+	g.P("\t\t\t\t}")
 	g.P("\t\t\t\tif !ok {")
 	g.P(
 		"\t\t\t\t\treturn ",
 		fmtPkg.Ident("Errorf"),
-		`("unknown procedure %q", args[0])`,
+		`("unknown command %q", key)`,
 	)
 	g.P("\t\t\t\t}")
 	g.P(
@@ -729,12 +747,12 @@ func emitSchemaLookup(g *protogen.GeneratedFile) {
 	g.P("\t\t\t\treturn nil")
 	g.P("\t\t\t}")
 
-	g.P("\t\t\tall := make([]", cliPkg.Ident("SchemaInfo"), ", 0, len(schemas))")
+	g.P("\t\t\tall := make([]", cliPkg.Ident("CommandInfo"), ", 0, len(schemas))")
 	g.P("\t\t\tfor _, info := range schemas {")
 	g.P("\t\t\t\tall = append(all, info)")
 	g.P("\t\t\t}")
 	g.P("\t\t\t", sortPkg.Ident("Slice"), "(all, func(i, j int) bool {")
-	g.P("\t\t\t\treturn all[i].Procedure < all[j].Procedure")
+	g.P("\t\t\t\treturn all[i].Command < all[j].Command")
 	g.P("\t\t\t})")
 	g.P(
 		"\t\t\tout, err := ",
@@ -748,36 +766,32 @@ func emitSchemaLookup(g *protogen.GeneratedFile) {
 	g.P("\t\t\treturn nil")
 }
 
-// emitSchemaMessage emits a SchemaMessage literal for the given message type.
-func emitSchemaMessage(
+// emitSchemaFields emits a []SchemaField literal for the given message type.
+func emitSchemaFields(
 	g *protogen.GeneratedFile,
 	msg *protogen.Message,
 	fieldName, indent string,
 ) {
-	fullName := string(msg.Desc.FullName())
-	g.P(indent, fieldName, ": ", cliPkg.Ident("SchemaMessage"), "{")
-	g.P(indent, "\tFullName: ", fmt.Sprintf("%q", fullName), ",")
-	g.P(indent, "\tFields: []", cliPkg.Ident("SchemaField"), "{")
+	g.P(indent, fieldName, ": []", cliPkg.Ident("SchemaField"), "{")
 	for _, field := range msg.Fields {
-		g.P(indent, "\t\t{")
-		g.P(indent, "\t\t\tName: ", fmt.Sprintf("%q", string(field.Desc.Name())), ",")
-		g.P(indent, "\t\t\tType: ", fmt.Sprintf("%q", schemaFieldType(field)), ",")
+		g.P(indent, "\t{")
+		g.P(indent, "\t\tName: ", fmt.Sprintf("%q", string(field.Desc.Name())), ",")
+		g.P(indent, "\t\tType: ", fmt.Sprintf("%q", schemaFieldType(field)), ",")
 		if field.Desc.IsList() {
-			g.P(indent, "\t\t\tRepeated: true,")
+			g.P(indent, "\t\tRepeated: true,")
 		}
 		if field.Desc.Kind() == protoreflect.EnumKind {
 			values := enumCLIValuesForSchema(field.Enum)
 			if len(values) > 0 {
-				g.P(indent, "\t\t\tEnumValues: []string{")
+				g.P(indent, "\t\tEnumValues: []string{")
 				for _, v := range values {
-					g.P(indent, "\t\t\t\t", fmt.Sprintf("%q", v), ",")
+					g.P(indent, "\t\t\t", fmt.Sprintf("%q", v), ",")
 				}
-				g.P(indent, "\t\t\t},")
+				g.P(indent, "\t\t},")
 			}
 		}
-		g.P(indent, "\t\t},")
+		g.P(indent, "\t},")
 	}
-	g.P(indent, "\t},")
 	g.P(indent, "},")
 }
 

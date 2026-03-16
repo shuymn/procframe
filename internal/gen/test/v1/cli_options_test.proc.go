@@ -12,6 +12,7 @@ import (
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
 	sort "sort"
+	strings "strings"
 )
 
 // CliOptionsTestServiceHandler is the handler interface for CliOptionsTestService.
@@ -199,75 +200,73 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 		Segment: "schema",
 		Summary: "Show procedure schemas",
 		Run: func(_ context.Context, args []string, stdout io.Writer) error {
-			schemas := map[string]cli.SchemaInfo{
-				"/test.v1.CliOptionsTestService/DefaultEnabled": {
+			schemas := map[string]cli.CommandInfo{
+				"cliopts default-enabled": {
+					Command:   "cliopts default-enabled",
+					Summary:   "Default CLI enabled",
 					Procedure: "/test.v1.CliOptionsTestService/DefaultEnabled",
-					Request: cli.SchemaMessage{
-						FullName: "test.v1.PingRequest",
-						Fields: []cli.SchemaField{
-							{
-								Name: "target",
-								Type: "string",
-							},
+					Flags: []cli.SchemaField{
+						{
+							Name: "target",
+							Type: "string",
 						},
 					},
-					Response: cli.SchemaMessage{
-						FullName: "test.v1.PingResponse",
-						Fields: []cli.SchemaField{
-							{
-								Name: "result",
-								Type: "string",
-							},
+					Output: []cli.SchemaField{
+						{
+							Name: "result",
+							Type: "string",
 						},
 					},
 				},
-				"/test.v1.CliOptionsTestService/ExplicitEnabled": {
+				"cliopts explicit-enabled": {
+					Command:   "cliopts explicit-enabled",
+					Summary:   "Explicitly CLI enabled",
 					Procedure: "/test.v1.CliOptionsTestService/ExplicitEnabled",
-					Request: cli.SchemaMessage{
-						FullName: "test.v1.PingRequest",
-						Fields: []cli.SchemaField{
-							{
-								Name: "target",
-								Type: "string",
-							},
+					Flags: []cli.SchemaField{
+						{
+							Name: "target",
+							Type: "string",
 						},
 					},
-					Response: cli.SchemaMessage{
-						FullName: "test.v1.PingResponse",
-						Fields: []cli.SchemaField{
-							{
-								Name: "result",
-								Type: "string",
-							},
+					Output: []cli.SchemaField{
+						{
+							Name: "result",
+							Type: "string",
 						},
 					},
 				},
-				"/test.v1.CliOptionsTestService/WsEnabled": {
+				"cliopts ws-enabled": {
+					Command:   "cliopts ws-enabled",
+					Summary:   "WS enabled, CLI default",
 					Procedure: "/test.v1.CliOptionsTestService/WsEnabled",
-					Request: cli.SchemaMessage{
-						FullName: "test.v1.PingRequest",
-						Fields: []cli.SchemaField{
-							{
-								Name: "target",
-								Type: "string",
-							},
+					Flags: []cli.SchemaField{
+						{
+							Name: "target",
+							Type: "string",
 						},
 					},
-					Response: cli.SchemaMessage{
-						FullName: "test.v1.PingResponse",
-						Fields: []cli.SchemaField{
-							{
-								Name: "result",
-								Type: "string",
-							},
+					Output: []cli.SchemaField{
+						{
+							Name: "result",
+							Type: "string",
 						},
 					},
 				},
 			}
 			if len(args) > 0 {
-				info, ok := schemas[args[0]]
+				key := strings.Join(args, " ")
+				info, ok := schemas[key]
 				if !ok {
-					return fmt.Errorf("unknown procedure %q", args[0])
+					for _, v := range schemas {
+						if v.Procedure == key {
+							info = v
+							ok = true
+							break
+						}
+					}
+				}
+				if !ok {
+					return fmt.Errorf("unknown command %q", key)
 				}
 				out, err := json.MarshalIndent(info, "", "  ")
 				if err != nil {
@@ -276,12 +275,12 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 				fmt.Fprintln(stdout, string(out))
 				return nil
 			}
-			all := make([]cli.SchemaInfo, 0, len(schemas))
+			all := make([]cli.CommandInfo, 0, len(schemas))
 			for _, info := range schemas {
 				all = append(all, info)
 			}
 			sort.Slice(all, func(i, j int) bool {
-				return all[i].Procedure < all[j].Procedure
+				return all[i].Command < all[j].Command
 			})
 			out, err := json.MarshalIndent(all, "", "  ")
 			if err != nil {

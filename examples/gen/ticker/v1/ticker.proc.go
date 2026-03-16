@@ -12,6 +12,7 @@ import (
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
 	sort "sort"
+	strings "strings"
 )
 
 // TickerServiceHandler is the handler interface for TickerService.
@@ -93,42 +94,48 @@ func NewTickerServiceCLIRunner(h TickerServiceHandler, opts ...cli.Option) *cli.
 		Segment: "schema",
 		Summary: "Show procedure schemas",
 		Run: func(_ context.Context, args []string, stdout io.Writer) error {
-			schemas := map[string]cli.SchemaInfo{
-				"/ticker.v1.TickerService/Tick": {
+			schemas := map[string]cli.CommandInfo{
+				"ticker run": {
+					Command:   "ticker run",
+					Summary:   "Send ticks",
 					Procedure: "/ticker.v1.TickerService/Tick",
-					Request: cli.SchemaMessage{
-						FullName: "ticker.v1.TickRequest",
-						Fields: []cli.SchemaField{
-							{
-								Name: "prefix",
-								Type: "string",
-							},
-							{
-								Name: "count",
-								Type: "int32",
-							},
+					Flags: []cli.SchemaField{
+						{
+							Name: "prefix",
+							Type: "string",
+						},
+						{
+							Name: "count",
+							Type: "int32",
 						},
 					},
-					Response: cli.SchemaMessage{
-						FullName: "ticker.v1.TickResponse",
-						Fields: []cli.SchemaField{
-							{
-								Name: "message",
-								Type: "string",
-							},
-							{
-								Name: "seq",
-								Type: "int32",
-							},
+					Output: []cli.SchemaField{
+						{
+							Name: "message",
+							Type: "string",
+						},
+						{
+							Name: "seq",
+							Type: "int32",
 						},
 					},
 					Streaming: true,
 				},
 			}
 			if len(args) > 0 {
-				info, ok := schemas[args[0]]
+				key := strings.Join(args, " ")
+				info, ok := schemas[key]
 				if !ok {
-					return fmt.Errorf("unknown procedure %q", args[0])
+					for _, v := range schemas {
+						if v.Procedure == key {
+							info = v
+							ok = true
+							break
+						}
+					}
+				}
+				if !ok {
+					return fmt.Errorf("unknown command %q", key)
 				}
 				out, err := json.MarshalIndent(info, "", "  ")
 				if err != nil {
@@ -137,12 +144,12 @@ func NewTickerServiceCLIRunner(h TickerServiceHandler, opts ...cli.Option) *cli.
 				fmt.Fprintln(stdout, string(out))
 				return nil
 			}
-			all := make([]cli.SchemaInfo, 0, len(schemas))
+			all := make([]cli.CommandInfo, 0, len(schemas))
 			for _, info := range schemas {
 				all = append(all, info)
 			}
 			sort.Slice(all, func(i, j int) bool {
-				return all[i].Procedure < all[j].Procedure
+				return all[i].Command < all[j].Command
 			})
 			out, err := json.MarshalIndent(all, "", "  ")
 			if err != nil {

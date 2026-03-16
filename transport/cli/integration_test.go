@@ -371,15 +371,15 @@ func TestIntegration_Schema(t *testing.T) {
 	}
 
 	out := stdout.String()
-	if !strings.Contains(out, "/test.v1.EchoService/Echo") {
-		t.Fatalf("want procedure path in schema, got:\n%s", out)
+	if !strings.Contains(out, `"echo run"`) {
+		t.Fatalf("want command path in schema, got:\n%s", out)
 	}
-	if !strings.Contains(out, "test.v1.EchoRequest") {
-		t.Fatalf("want request type in schema, got:\n%s", out)
+	if !strings.Contains(out, `"Echo a message"`) {
+		t.Fatalf("want summary in schema, got:\n%s", out)
 	}
 }
 
-func TestIntegration_SchemaSpecificProcedure(t *testing.T) {
+func TestIntegration_SchemaSpecificCommand(t *testing.T) {
 	t.Parallel()
 
 	var stdout bytes.Buffer
@@ -389,20 +389,49 @@ func TestIntegration_SchemaSpecificProcedure(t *testing.T) {
 		cli.WithStderr(&bytes.Buffer{}),
 	)
 
+	// Lookup by command path
+	err := runner.Run(t.Context(), []string{"schema", "echo", "run"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var info cli.CommandInfo
+	if err := json.Unmarshal(stdout.Bytes(), &info); err != nil {
+		t.Fatalf("invalid JSON: %v\nraw: %s", err, stdout.String())
+	}
+	if info.Command != "echo run" {
+		t.Fatalf("want command=%q, got %q", "echo run", info.Command)
+	}
+	if info.Procedure != "/test.v1.EchoService/Echo" {
+		t.Fatalf("want procedure, got %q", info.Procedure)
+	}
+	if len(info.Flags) != 3 {
+		t.Fatalf("want 3 flags, got %d", len(info.Flags))
+	}
+}
+
+func TestIntegration_SchemaFallbackByProcedure(t *testing.T) {
+	t.Parallel()
+
+	var stdout bytes.Buffer
+	runner := testv1.NewEchoServiceCLIRunner(
+		&echoHandler{},
+		cli.WithStdout(&stdout),
+		cli.WithStderr(&bytes.Buffer{}),
+	)
+
+	// Fallback: lookup by procedure name
 	err := runner.Run(t.Context(), []string{"schema", "/test.v1.EchoService/Echo"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	var info cli.SchemaInfo
+	var info cli.CommandInfo
 	if err := json.Unmarshal(stdout.Bytes(), &info); err != nil {
 		t.Fatalf("invalid JSON: %v\nraw: %s", err, stdout.String())
 	}
-	if info.Procedure != "/test.v1.EchoService/Echo" {
-		t.Fatalf("want procedure, got %q", info.Procedure)
-	}
-	if len(info.Request.Fields) != 3 {
-		t.Fatalf("want 3 request fields, got %d", len(info.Request.Fields))
+	if info.Command != "echo run" {
+		t.Fatalf("want command=%q, got %q", "echo run", info.Command)
 	}
 }
 
@@ -416,12 +445,12 @@ func TestIntegration_SchemaStreamingFlag(t *testing.T) {
 		cli.WithStderr(&bytes.Buffer{}),
 	)
 
-	err := runner.Run(t.Context(), []string{"schema", "/test.v1.TickService/Watch"})
+	err := runner.Run(t.Context(), []string{"schema", "tick", "watch"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	var info cli.SchemaInfo
+	var info cli.CommandInfo
 	if err := json.Unmarshal(stdout.Bytes(), &info); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}

@@ -12,6 +12,7 @@ import (
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
 	sort "sort"
+	strings "strings"
 )
 
 // GreeterServiceHandler is the handler interface for GreeterService.
@@ -89,33 +90,39 @@ func NewGreeterServiceCLIRunner(h GreeterServiceHandler, opts ...cli.Option) *cl
 		Segment: "schema",
 		Summary: "Show procedure schemas",
 		Run: func(_ context.Context, args []string, stdout io.Writer) error {
-			schemas := map[string]cli.SchemaInfo{
-				"/greeter.v1.GreeterService/Greet": {
+			schemas := map[string]cli.CommandInfo{
+				"greet run": {
+					Command:   "greet run",
+					Summary:   "Greet someone",
 					Procedure: "/greeter.v1.GreeterService/Greet",
-					Request: cli.SchemaMessage{
-						FullName: "greeter.v1.GreetRequest",
-						Fields: []cli.SchemaField{
-							{
-								Name: "name",
-								Type: "string",
-							},
+					Flags: []cli.SchemaField{
+						{
+							Name: "name",
+							Type: "string",
 						},
 					},
-					Response: cli.SchemaMessage{
-						FullName: "greeter.v1.GreetResponse",
-						Fields: []cli.SchemaField{
-							{
-								Name: "greeting",
-								Type: "string",
-							},
+					Output: []cli.SchemaField{
+						{
+							Name: "greeting",
+							Type: "string",
 						},
 					},
 				},
 			}
 			if len(args) > 0 {
-				info, ok := schemas[args[0]]
+				key := strings.Join(args, " ")
+				info, ok := schemas[key]
 				if !ok {
-					return fmt.Errorf("unknown procedure %q", args[0])
+					for _, v := range schemas {
+						if v.Procedure == key {
+							info = v
+							ok = true
+							break
+						}
+					}
+				}
+				if !ok {
+					return fmt.Errorf("unknown command %q", key)
 				}
 				out, err := json.MarshalIndent(info, "", "  ")
 				if err != nil {
@@ -124,12 +131,12 @@ func NewGreeterServiceCLIRunner(h GreeterServiceHandler, opts ...cli.Option) *cl
 				fmt.Fprintln(stdout, string(out))
 				return nil
 			}
-			all := make([]cli.SchemaInfo, 0, len(schemas))
+			all := make([]cli.CommandInfo, 0, len(schemas))
 			for _, info := range schemas {
 				all = append(all, info)
 			}
 			sort.Slice(all, func(i, j int) bool {
-				return all[i].Procedure < all[j].Procedure
+				return all[i].Command < all[j].Command
 			})
 			out, err := json.MarshalIndent(all, "", "  ")
 			if err != nil {

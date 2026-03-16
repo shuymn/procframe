@@ -12,6 +12,7 @@ import (
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
 	sort "sort"
+	strings "strings"
 )
 
 // EchoServiceHandler is the handler interface for EchoService.
@@ -95,45 +96,51 @@ func NewEchoServiceCLIRunner(h EchoServiceHandler, opts ...cli.Option) *cli.Runn
 		Segment: "schema",
 		Summary: "Show procedure schemas",
 		Run: func(_ context.Context, args []string, stdout io.Writer) error {
-			schemas := map[string]cli.SchemaInfo{
-				"/test.v1.EchoService/Echo": {
+			schemas := map[string]cli.CommandInfo{
+				"echo run": {
+					Command:   "echo run",
+					Summary:   "Echo a message",
 					Procedure: "/test.v1.EchoService/Echo",
-					Request: cli.SchemaMessage{
-						FullName: "test.v1.EchoRequest",
-						Fields: []cli.SchemaField{
-							{
-								Name: "message",
-								Type: "string",
-							},
-							{
-								Name: "count",
-								Type: "int32",
-							},
-							{
-								Name: "uppercase",
-								Type: "bool",
-							},
+					Flags: []cli.SchemaField{
+						{
+							Name: "message",
+							Type: "string",
+						},
+						{
+							Name: "count",
+							Type: "int32",
+						},
+						{
+							Name: "uppercase",
+							Type: "bool",
 						},
 					},
-					Response: cli.SchemaMessage{
-						FullName: "test.v1.EchoResponse",
-						Fields: []cli.SchemaField{
-							{
-								Name: "message",
-								Type: "string",
-							},
-							{
-								Name: "count",
-								Type: "int32",
-							},
+					Output: []cli.SchemaField{
+						{
+							Name: "message",
+							Type: "string",
+						},
+						{
+							Name: "count",
+							Type: "int32",
 						},
 					},
 				},
 			}
 			if len(args) > 0 {
-				info, ok := schemas[args[0]]
+				key := strings.Join(args, " ")
+				info, ok := schemas[key]
 				if !ok {
-					return fmt.Errorf("unknown procedure %q", args[0])
+					for _, v := range schemas {
+						if v.Procedure == key {
+							info = v
+							ok = true
+							break
+						}
+					}
+				}
+				if !ok {
+					return fmt.Errorf("unknown command %q", key)
 				}
 				out, err := json.MarshalIndent(info, "", "  ")
 				if err != nil {
@@ -142,12 +149,12 @@ func NewEchoServiceCLIRunner(h EchoServiceHandler, opts ...cli.Option) *cli.Runn
 				fmt.Fprintln(stdout, string(out))
 				return nil
 			}
-			all := make([]cli.SchemaInfo, 0, len(schemas))
+			all := make([]cli.CommandInfo, 0, len(schemas))
 			for _, info := range schemas {
 				all = append(all, info)
 			}
 			sort.Slice(all, func(i, j int) bool {
-				return all[i].Procedure < all[j].Procedure
+				return all[i].Command < all[j].Command
 			})
 			out, err := json.MarshalIndent(all, "", "  ")
 			if err != nil {
