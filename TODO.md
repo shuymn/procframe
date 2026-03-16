@@ -148,3 +148,22 @@
   - Executable doc: `TestIntegration_Schema`, `TestIntegration_SchemaSpecificCommand`, `TestIntegration_SchemaFallbackByProcedure`, `TestIntegration_SchemaStreamingFlag`, `TestIntegration_SchemaContainsDescription`, `BenchmarkSchemaList`, `BenchmarkSchemaLookupByProcedure`
   - Why not split vertically further?: schema list と lookup は同一の generated metadata source を共有しており、片方だけ静的化しても runtime map 再構築を除去したとは言えないため
   - Escalate if: service-level schema metadata を静的変数として生成すると Go の初期化順や generated file size の制約により既存 codegen が安全にコンパイルできなくなる場合
+
+- [x] Theme: Transport 共通 Interceptor 対応
+  - Outcome: アプリケーションが 1 つの interceptor API で CLI / Connect / WS の handler 実行前後と stream 送信を横断的に制御できる
+  - Goal: `procframe` に共通 interceptor 契約と chain 実行 helper を追加し、各 transport option から適用できるようにする
+  - Must Not Break: 既存 handler interface の signature, CLI/Connect/WS の既存成功系と error mapping, generated constructor 名, `ErrorMapper` の責務, 既存 schema/help 出力
+  - Non-goals: transport 固有 hook API の追加, HTTP header や CLI raw args への直接アクセス, client-side interceptor, unary 以外の新しい handler 形, metrics/logging 実装そのもの
+  - Acceptance (EARS):
+    - When a transport is configured with `WithInterceptors`, the handler invocation shall pass through the registered interceptor chain before the underlying handler runs
+    - When multiple interceptors are registered, the first registered interceptor shall be the outermost wrapper
+    - When no interceptor is configured, the transport shall preserve the current behavior
+    - When a unary interceptor short-circuits, the underlying handler shall not run and the returned response or error shall flow through the existing transport boundary behavior
+    - When a server-stream interceptor wraps a call, it shall observe the stream handler lifecycle and each `Send`
+    - When an interceptor returns an error, existing transport-specific error mapping shall still determine CLI exit/status output, Connect code mapping, and WS error frame construction
+    - When a handler returns or sends `nil`, the shared invocation layer shall preserve the current internal-error semantics
+  - Evidence: `run=task check; oracle=interceptor chain applies consistently across CLI/Connect/WS, short-circuit and stream send wrapping work, and existing boundary behavior remains unchanged; visibility=implementation-visible; controls=[]; missing=[agent,context]; companion=go test ./transport/... replay confirms transport-level behavior on generated CLI, Connect, and WS paths`
+  - Gates: `static`, `integration`
+  - Executable doc: `TestInvokeUnaryInterceptors`, `TestInvokeServerStreamInterceptors`, `TestIntegration_CLIInterceptor`, `TestIntegration_ConnectInterceptor`, `TestIntegration_WSInterceptor`
+  - Why not split vertically further?: 共通 interceptor 契約、transport option、generated CLI 呼び出し経路は同じ public capability を構成しており、どれか単体では外部から観測できる前進にならないため
+  - Escalate if: type-erased interceptor 契約と typed handler の間で unary/stream の両方を unsafe なしに橋渡しできない場合
