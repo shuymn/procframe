@@ -11,7 +11,6 @@ import (
 	cli "github.com/shuymn/procframe/transport/cli"
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
-	sort "sort"
 	strings "strings"
 )
 
@@ -21,6 +20,66 @@ type GreeterServiceHandler interface {
 		context.Context,
 		*procframe.Request[GreetRequest],
 	) (*procframe.Response[GreetResponse], error)
+}
+
+var schemaDataGreeterServiceByCommand = map[string]cli.CommandInfo{
+	"greet run": {
+		Command:   "greet run",
+		Summary:   "Greet someone",
+		Procedure: "/greeter.v1.GreeterService/Greet",
+		Flags: []cli.SchemaField{
+			{
+				Name: "name",
+				Type: "string",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "greeting",
+				Type: "string",
+			},
+		},
+	},
+}
+
+var schemaDataGreeterServiceByProcedure = map[string]cli.CommandInfo{
+	"/greeter.v1.GreeterService/Greet": {
+		Command:   "greet run",
+		Summary:   "Greet someone",
+		Procedure: "/greeter.v1.GreeterService/Greet",
+		Flags: []cli.SchemaField{
+			{
+				Name: "name",
+				Type: "string",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "greeting",
+				Type: "string",
+			},
+		},
+	},
+}
+
+var schemaDataGreeterServiceAll = []cli.CommandInfo{
+	{
+		Command:   "greet run",
+		Summary:   "Greet someone",
+		Procedure: "/greeter.v1.GreeterService/Greet",
+		Flags: []cli.SchemaField{
+			{
+				Name: "name",
+				Type: "string",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "greeting",
+				Type: "string",
+			},
+		},
+	},
 }
 
 // NewGreeterServiceCLIRunner constructs a [cli.Runner]
@@ -95,36 +154,11 @@ func NewGreeterServiceCLIRunner(h GreeterServiceHandler, opts ...cli.Option) *cl
 		Segment: "schema",
 		Summary: "Show procedure schemas",
 		Run: func(_ context.Context, args []string, stdout io.Writer) error {
-			schemas := map[string]cli.CommandInfo{
-				"greet run": {
-					Command:   "greet run",
-					Summary:   "Greet someone",
-					Procedure: "/greeter.v1.GreeterService/Greet",
-					Flags: []cli.SchemaField{
-						{
-							Name: "name",
-							Type: "string",
-						},
-					},
-					Output: []cli.SchemaField{
-						{
-							Name: "greeting",
-							Type: "string",
-						},
-					},
-				},
-			}
 			if len(args) > 0 {
 				key := strings.Join(args, " ")
-				info, ok := schemas[key]
+				info, ok := schemaDataGreeterServiceByCommand[key]
 				if !ok {
-					for _, v := range schemas {
-						if v.Procedure == key {
-							info = v
-							ok = true
-							break
-						}
-					}
+					info, ok = schemaDataGreeterServiceByProcedure[key]
 				}
 				if !ok {
 					return fmt.Errorf("unknown command %q", key)
@@ -136,14 +170,7 @@ func NewGreeterServiceCLIRunner(h GreeterServiceHandler, opts ...cli.Option) *cl
 				fmt.Fprintln(stdout, string(out))
 				return nil
 			}
-			all := make([]cli.CommandInfo, 0, len(schemas))
-			for _, info := range schemas {
-				all = append(all, info)
-			}
-			sort.Slice(all, func(i, j int) bool {
-				return all[i].Command < all[j].Command
-			})
-			out, err := json.MarshalIndent(all, "", "  ")
+			out, err := json.MarshalIndent(schemaDataGreeterServiceAll, "", "  ")
 			if err != nil {
 				return err
 			}

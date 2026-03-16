@@ -11,7 +11,6 @@ import (
 	cli "github.com/shuymn/procframe/transport/cli"
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
-	sort "sort"
 	strings "strings"
 )
 
@@ -21,6 +20,96 @@ type PRServiceHandler interface {
 		context.Context,
 		*procframe.Request[PRListRequest],
 	) (*procframe.Response[PRListResponse], error)
+}
+
+var schemaDataPRServiceByCommand = map[string]cli.CommandInfo{
+	"repo pr list": {
+		Command:   "repo pr list",
+		Summary:   "List pull requests",
+		Procedure: "/test.v1.PRService/List",
+		Flags: []cli.SchemaField{
+			{
+				Name: "repo",
+				Type: "message",
+			},
+			{
+				Name: "pr",
+				Type: "message",
+			},
+			{
+				Name:        "limit",
+				Type:        "int32",
+				Description: "Maximum number of results",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name:     "items",
+				Type:     "string",
+				Repeated: true,
+			},
+		},
+	},
+}
+
+var schemaDataPRServiceByProcedure = map[string]cli.CommandInfo{
+	"/test.v1.PRService/List": {
+		Command:   "repo pr list",
+		Summary:   "List pull requests",
+		Procedure: "/test.v1.PRService/List",
+		Flags: []cli.SchemaField{
+			{
+				Name: "repo",
+				Type: "message",
+			},
+			{
+				Name: "pr",
+				Type: "message",
+			},
+			{
+				Name:        "limit",
+				Type:        "int32",
+				Description: "Maximum number of results",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name:     "items",
+				Type:     "string",
+				Repeated: true,
+			},
+		},
+	},
+}
+
+var schemaDataPRServiceAll = []cli.CommandInfo{
+	{
+		Command:   "repo pr list",
+		Summary:   "List pull requests",
+		Procedure: "/test.v1.PRService/List",
+		Flags: []cli.SchemaField{
+			{
+				Name: "repo",
+				Type: "message",
+			},
+			{
+				Name: "pr",
+				Type: "message",
+			},
+			{
+				Name:        "limit",
+				Type:        "int32",
+				Description: "Maximum number of results",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name:     "items",
+				Type:     "string",
+				Repeated: true,
+			},
+		},
+	},
 }
 
 // NewPRServiceCLIRunner constructs a [cli.Runner]
@@ -114,46 +203,11 @@ func NewPRServiceCLIRunner(h PRServiceHandler, opts ...cli.Option) *cli.Runner {
 		Segment: "schema",
 		Summary: "Show procedure schemas",
 		Run: func(_ context.Context, args []string, stdout io.Writer) error {
-			schemas := map[string]cli.CommandInfo{
-				"repo pr list": {
-					Command:   "repo pr list",
-					Summary:   "List pull requests",
-					Procedure: "/test.v1.PRService/List",
-					Flags: []cli.SchemaField{
-						{
-							Name: "repo",
-							Type: "message",
-						},
-						{
-							Name: "pr",
-							Type: "message",
-						},
-						{
-							Name:        "limit",
-							Type:        "int32",
-							Description: "Maximum number of results",
-						},
-					},
-					Output: []cli.SchemaField{
-						{
-							Name:     "items",
-							Type:     "string",
-							Repeated: true,
-						},
-					},
-				},
-			}
 			if len(args) > 0 {
 				key := strings.Join(args, " ")
-				info, ok := schemas[key]
+				info, ok := schemaDataPRServiceByCommand[key]
 				if !ok {
-					for _, v := range schemas {
-						if v.Procedure == key {
-							info = v
-							ok = true
-							break
-						}
-					}
+					info, ok = schemaDataPRServiceByProcedure[key]
 				}
 				if !ok {
 					return fmt.Errorf("unknown command %q", key)
@@ -165,14 +219,7 @@ func NewPRServiceCLIRunner(h PRServiceHandler, opts ...cli.Option) *cli.Runner {
 				fmt.Fprintln(stdout, string(out))
 				return nil
 			}
-			all := make([]cli.CommandInfo, 0, len(schemas))
-			for _, info := range schemas {
-				all = append(all, info)
-			}
-			sort.Slice(all, func(i, j int) bool {
-				return all[i].Command < all[j].Command
-			})
-			out, err := json.MarshalIndent(all, "", "  ")
+			out, err := json.MarshalIndent(schemaDataPRServiceAll, "", "  ")
 			if err != nil {
 				return err
 			}

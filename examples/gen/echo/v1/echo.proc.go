@@ -11,7 +11,6 @@ import (
 	cli "github.com/shuymn/procframe/transport/cli"
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
-	sort "sort"
 	strings "strings"
 )
 
@@ -21,6 +20,66 @@ type EchoServiceHandler interface {
 		context.Context,
 		*procframe.Request[EchoRequest],
 	) (*procframe.Response[EchoResponse], error)
+}
+
+var schemaDataEchoServiceByCommand = map[string]cli.CommandInfo{
+	"echo run": {
+		Command:   "echo run",
+		Summary:   "Echo a message",
+		Procedure: "/echo.v1.EchoService/Echo",
+		Flags: []cli.SchemaField{
+			{
+				Name: "message",
+				Type: "string",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "message",
+				Type: "string",
+			},
+		},
+	},
+}
+
+var schemaDataEchoServiceByProcedure = map[string]cli.CommandInfo{
+	"/echo.v1.EchoService/Echo": {
+		Command:   "echo run",
+		Summary:   "Echo a message",
+		Procedure: "/echo.v1.EchoService/Echo",
+		Flags: []cli.SchemaField{
+			{
+				Name: "message",
+				Type: "string",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "message",
+				Type: "string",
+			},
+		},
+	},
+}
+
+var schemaDataEchoServiceAll = []cli.CommandInfo{
+	{
+		Command:   "echo run",
+		Summary:   "Echo a message",
+		Procedure: "/echo.v1.EchoService/Echo",
+		Flags: []cli.SchemaField{
+			{
+				Name: "message",
+				Type: "string",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "message",
+				Type: "string",
+			},
+		},
+	},
 }
 
 // NewEchoServiceCLIRunner constructs a [cli.Runner]
@@ -95,36 +154,11 @@ func NewEchoServiceCLIRunner(h EchoServiceHandler, opts ...cli.Option) *cli.Runn
 		Segment: "schema",
 		Summary: "Show procedure schemas",
 		Run: func(_ context.Context, args []string, stdout io.Writer) error {
-			schemas := map[string]cli.CommandInfo{
-				"echo run": {
-					Command:   "echo run",
-					Summary:   "Echo a message",
-					Procedure: "/echo.v1.EchoService/Echo",
-					Flags: []cli.SchemaField{
-						{
-							Name: "message",
-							Type: "string",
-						},
-					},
-					Output: []cli.SchemaField{
-						{
-							Name: "message",
-							Type: "string",
-						},
-					},
-				},
-			}
 			if len(args) > 0 {
 				key := strings.Join(args, " ")
-				info, ok := schemas[key]
+				info, ok := schemaDataEchoServiceByCommand[key]
 				if !ok {
-					for _, v := range schemas {
-						if v.Procedure == key {
-							info = v
-							ok = true
-							break
-						}
-					}
+					info, ok = schemaDataEchoServiceByProcedure[key]
 				}
 				if !ok {
 					return fmt.Errorf("unknown command %q", key)
@@ -136,14 +170,7 @@ func NewEchoServiceCLIRunner(h EchoServiceHandler, opts ...cli.Option) *cli.Runn
 				fmt.Fprintln(stdout, string(out))
 				return nil
 			}
-			all := make([]cli.CommandInfo, 0, len(schemas))
-			for _, info := range schemas {
-				all = append(all, info)
-			}
-			sort.Slice(all, func(i, j int) bool {
-				return all[i].Command < all[j].Command
-			})
-			out, err := json.MarshalIndent(all, "", "  ")
+			out, err := json.MarshalIndent(schemaDataEchoServiceAll, "", "  ")
 			if err != nil {
 				return err
 			}
