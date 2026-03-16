@@ -33,12 +33,17 @@ message WsOptions {
   optional bool enabled = 1 [default = false];
 }
 
+message ConnectOptions {
+  optional bool enabled = 1 [default = false];
+}
+
 message ProcOptions {
   optional CliPath cli_path = 1;
   optional CliOptions cli = 2;
   optional WsOptions ws = 3;
   optional string summary = 4;
   optional bool hidden = 5 [default = false];
+  optional ConnectOptions connect = 6;
 }
 
 message FieldOptions {

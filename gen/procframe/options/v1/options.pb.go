@@ -320,6 +320,55 @@ func (x *WsOptions) GetEnabled() bool {
 	return Default_WsOptions_Enabled
 }
 
+type ConnectOptions struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Enabled       *bool                  `protobuf:"varint,1,opt,name=enabled,def=0" json:"enabled,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+// Default values for ConnectOptions fields.
+const (
+	Default_ConnectOptions_Enabled = bool(false)
+)
+
+func (x *ConnectOptions) Reset() {
+	*x = ConnectOptions{}
+	mi := &file_procframe_options_v1_options_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConnectOptions) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConnectOptions) ProtoMessage() {}
+
+func (x *ConnectOptions) ProtoReflect() protoreflect.Message {
+	mi := &file_procframe_options_v1_options_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConnectOptions.ProtoReflect.Descriptor instead.
+func (*ConnectOptions) Descriptor() ([]byte, []int) {
+	return file_procframe_options_v1_options_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ConnectOptions) GetEnabled() bool {
+	if x != nil && x.Enabled != nil {
+		return *x.Enabled
+	}
+	return Default_ConnectOptions_Enabled
+}
+
 type ProcOptions struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	CliPath       *CliPath               `protobuf:"bytes,1,opt,name=cli_path,json=cliPath" json:"cli_path,omitempty"`
@@ -327,6 +376,7 @@ type ProcOptions struct {
 	Ws            *WsOptions             `protobuf:"bytes,3,opt,name=ws" json:"ws,omitempty"`
 	Summary       *string                `protobuf:"bytes,4,opt,name=summary" json:"summary,omitempty"`
 	Hidden        *bool                  `protobuf:"varint,5,opt,name=hidden,def=0" json:"hidden,omitempty"`
+	Connect       *ConnectOptions        `protobuf:"bytes,6,opt,name=connect" json:"connect,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -338,7 +388,7 @@ const (
 
 func (x *ProcOptions) Reset() {
 	*x = ProcOptions{}
-	mi := &file_procframe_options_v1_options_proto_msgTypes[5]
+	mi := &file_procframe_options_v1_options_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -350,7 +400,7 @@ func (x *ProcOptions) String() string {
 func (*ProcOptions) ProtoMessage() {}
 
 func (x *ProcOptions) ProtoReflect() protoreflect.Message {
-	mi := &file_procframe_options_v1_options_proto_msgTypes[5]
+	mi := &file_procframe_options_v1_options_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -363,7 +413,7 @@ func (x *ProcOptions) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProcOptions.ProtoReflect.Descriptor instead.
 func (*ProcOptions) Descriptor() ([]byte, []int) {
-	return file_procframe_options_v1_options_proto_rawDescGZIP(), []int{5}
+	return file_procframe_options_v1_options_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ProcOptions) GetCliPath() *CliPath {
@@ -401,6 +451,13 @@ func (x *ProcOptions) GetHidden() bool {
 	return Default_ProcOptions_Hidden
 }
 
+func (x *ProcOptions) GetConnect() *ConnectOptions {
+	if x != nil {
+		return x.Connect
+	}
+	return nil
+}
+
 type FieldOptions struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Description   *string                `protobuf:"bytes,1,opt,name=description" json:"description,omitempty"`
@@ -410,7 +467,7 @@ type FieldOptions struct {
 
 func (x *FieldOptions) Reset() {
 	*x = FieldOptions{}
-	mi := &file_procframe_options_v1_options_proto_msgTypes[6]
+	mi := &file_procframe_options_v1_options_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -422,7 +479,7 @@ func (x *FieldOptions) String() string {
 func (*FieldOptions) ProtoMessage() {}
 
 func (x *FieldOptions) ProtoReflect() protoreflect.Message {
-	mi := &file_procframe_options_v1_options_proto_msgTypes[6]
+	mi := &file_procframe_options_v1_options_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -435,7 +492,7 @@ func (x *FieldOptions) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FieldOptions.ProtoReflect.Descriptor instead.
 func (*FieldOptions) Descriptor() ([]byte, []int) {
-	return file_procframe_options_v1_options_proto_rawDescGZIP(), []int{6}
+	return file_procframe_options_v1_options_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *FieldOptions) GetDescription() string {
@@ -522,13 +579,16 @@ const file_procframe_options_v1_options_proto_rawDesc = "" +
 	"CliOptions\x12\x1e\n" +
 	"\aenabled\x18\x01 \x01(\b:\x04trueR\aenabled\",\n" +
 	"\tWsOptions\x12\x1f\n" +
-	"\aenabled\x18\x01 \x01(\b:\x05falseR\aenabled\"\xe5\x01\n" +
+	"\aenabled\x18\x01 \x01(\b:\x05falseR\aenabled\"1\n" +
+	"\x0eConnectOptions\x12\x1f\n" +
+	"\aenabled\x18\x01 \x01(\b:\x05falseR\aenabled\"\xa5\x02\n" +
 	"\vProcOptions\x128\n" +
 	"\bcli_path\x18\x01 \x01(\v2\x1d.procframe.options.v1.CliPathR\acliPath\x122\n" +
 	"\x03cli\x18\x02 \x01(\v2 .procframe.options.v1.CliOptionsR\x03cli\x12/\n" +
 	"\x02ws\x18\x03 \x01(\v2\x1f.procframe.options.v1.WsOptionsR\x02ws\x12\x18\n" +
 	"\asummary\x18\x04 \x01(\tR\asummary\x12\x1d\n" +
-	"\x06hidden\x18\x05 \x01(\b:\x05falseR\x06hidden\"0\n" +
+	"\x06hidden\x18\x05 \x01(\b:\x05falseR\x06hidden\x12>\n" +
+	"\aconnect\x18\x06 \x01(\v2$.procframe.options.v1.ConnectOptionsR\aconnect\"0\n" +
 	"\fFieldOptions\x12 \n" +
 	"\vdescription\x18\x01 \x01(\tR\vdescription:a\n" +
 	"\x06config\x12\x1d.google.protobuf.FieldOptions\x18\xb9\x8e\x03 \x01(\v2(.procframe.options.v1.ConfigFieldOptionsR\x06config:Y\n" +
@@ -548,37 +608,39 @@ func file_procframe_options_v1_options_proto_rawDescGZIP() []byte {
 	return file_procframe_options_v1_options_proto_rawDescData
 }
 
-var file_procframe_options_v1_options_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_procframe_options_v1_options_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_procframe_options_v1_options_proto_goTypes = []any{
 	(*CliPath)(nil),                     // 0: procframe.options.v1.CliPath
 	(*ConfigFieldOptions)(nil),          // 1: procframe.options.v1.ConfigFieldOptions
 	(*CliGroupOptions)(nil),             // 2: procframe.options.v1.CliGroupOptions
 	(*CliOptions)(nil),                  // 3: procframe.options.v1.CliOptions
 	(*WsOptions)(nil),                   // 4: procframe.options.v1.WsOptions
-	(*ProcOptions)(nil),                 // 5: procframe.options.v1.ProcOptions
-	(*FieldOptions)(nil),                // 6: procframe.options.v1.FieldOptions
-	(*descriptorpb.FieldOptions)(nil),   // 7: google.protobuf.FieldOptions
-	(*descriptorpb.ServiceOptions)(nil), // 8: google.protobuf.ServiceOptions
-	(*descriptorpb.MethodOptions)(nil),  // 9: google.protobuf.MethodOptions
+	(*ConnectOptions)(nil),              // 5: procframe.options.v1.ConnectOptions
+	(*ProcOptions)(nil),                 // 6: procframe.options.v1.ProcOptions
+	(*FieldOptions)(nil),                // 7: procframe.options.v1.FieldOptions
+	(*descriptorpb.FieldOptions)(nil),   // 8: google.protobuf.FieldOptions
+	(*descriptorpb.ServiceOptions)(nil), // 9: google.protobuf.ServiceOptions
+	(*descriptorpb.MethodOptions)(nil),  // 10: google.protobuf.MethodOptions
 }
 var file_procframe_options_v1_options_proto_depIdxs = []int32{
 	0,  // 0: procframe.options.v1.CliGroupOptions.path:type_name -> procframe.options.v1.CliPath
 	0,  // 1: procframe.options.v1.ProcOptions.cli_path:type_name -> procframe.options.v1.CliPath
 	3,  // 2: procframe.options.v1.ProcOptions.cli:type_name -> procframe.options.v1.CliOptions
 	4,  // 3: procframe.options.v1.ProcOptions.ws:type_name -> procframe.options.v1.WsOptions
-	7,  // 4: procframe.options.v1.config:extendee -> google.protobuf.FieldOptions
-	7,  // 5: procframe.options.v1.field:extendee -> google.protobuf.FieldOptions
-	8,  // 6: procframe.options.v1.cli_group:extendee -> google.protobuf.ServiceOptions
-	9,  // 7: procframe.options.v1.proc:extendee -> google.protobuf.MethodOptions
-	1,  // 8: procframe.options.v1.config:type_name -> procframe.options.v1.ConfigFieldOptions
-	6,  // 9: procframe.options.v1.field:type_name -> procframe.options.v1.FieldOptions
-	2,  // 10: procframe.options.v1.cli_group:type_name -> procframe.options.v1.CliGroupOptions
-	5,  // 11: procframe.options.v1.proc:type_name -> procframe.options.v1.ProcOptions
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	8,  // [8:12] is the sub-list for extension type_name
-	4,  // [4:8] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	5,  // 4: procframe.options.v1.ProcOptions.connect:type_name -> procframe.options.v1.ConnectOptions
+	8,  // 5: procframe.options.v1.config:extendee -> google.protobuf.FieldOptions
+	8,  // 6: procframe.options.v1.field:extendee -> google.protobuf.FieldOptions
+	9,  // 7: procframe.options.v1.cli_group:extendee -> google.protobuf.ServiceOptions
+	10, // 8: procframe.options.v1.proc:extendee -> google.protobuf.MethodOptions
+	1,  // 9: procframe.options.v1.config:type_name -> procframe.options.v1.ConfigFieldOptions
+	7,  // 10: procframe.options.v1.field:type_name -> procframe.options.v1.FieldOptions
+	2,  // 11: procframe.options.v1.cli_group:type_name -> procframe.options.v1.CliGroupOptions
+	6,  // 12: procframe.options.v1.proc:type_name -> procframe.options.v1.ProcOptions
+	13, // [13:13] is the sub-list for method output_type
+	13, // [13:13] is the sub-list for method input_type
+	9,  // [9:13] is the sub-list for extension type_name
+	5,  // [5:9] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_procframe_options_v1_options_proto_init() }
@@ -592,7 +654,7 @@ func file_procframe_options_v1_options_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_procframe_options_v1_options_proto_rawDesc), len(file_procframe_options_v1_options_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   8,
 			NumExtensions: 4,
 			NumServices:   0,
 		},
