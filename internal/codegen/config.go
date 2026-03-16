@@ -10,20 +10,18 @@ import (
 
 var (
 	configPkg  = protogen.GoImportPath("github.com/shuymn/procframe/config")
-	osPkg      = protogen.GoImportPath("os")
 	protoPkg   = protogen.GoImportPath("google.golang.org/protobuf/proto")
 	strconvPkg = protogen.GoImportPath("strconv")
 )
 
 func generateConfig(g *protogen.GeneratedFile, cfg *configInfo) error {
 	emitPresenceState(g, cfg)
-	emitLoadRuntimeConfig(g, cfg)
 	emitLoadConfigFile(g, cfg)
 	emitApplyDefaults(g, cfg)
-	emitApplyEnv(g, cfg)
+	emitApplyEnvWith(g, cfg)
 	emitApplyBootstrap(g, cfg)
 	emitValidateRequired(g, cfg)
-	emitParseBootstrapArgs(g, cfg)
+	emitConfigSpec(g, cfg)
 	emitFormatter(g, cfg)
 
 	if err := emitFieldParsers(g, cfg); err != nil {
@@ -41,37 +39,6 @@ func emitPresenceState(g *protogen.GeneratedFile, cfg *configInfo) {
 		}
 		g.P("\t", field.GoName, " bool")
 	}
-	g.P("}")
-	g.P()
-}
-
-func emitLoadRuntimeConfig(g *protogen.GeneratedFile, cfg *configInfo) {
-	g.P("// LoadRuntimeConfig resolves runtime config and returns remaining procedure args.")
-	g.P("func LoadRuntimeConfig(argv []string) (*", cfg.Message.GoName, ", []string, error) {")
-	g.P("\tcfg := &", cfg.Message.GoName, "{}")
-	g.P("\tpresence := &runtimeConfigFieldPresence{}")
-	g.P("\tif err := applyRuntimeConfigDefaults(cfg, presence); err != nil {")
-	g.P("\t\treturn nil, nil, ", fmtPkg.Ident("Errorf"), "(\"apply defaults: %w\", err)")
-	g.P("\t}")
-	g.P("\tconfigPath, bootstrapValues, rest, err := parseRuntimeConfigBootstrap(argv)")
-	g.P("\tif err != nil {")
-	g.P("\t\treturn nil, nil, err")
-	g.P("\t}")
-	g.P("\tif configPath != \"\" {")
-	g.P("\t\tif err := loadRuntimeConfigFile(cfg, presence, configPath); err != nil {")
-	g.P("\t\t\treturn nil, nil, ", fmtPkg.Ident("Errorf"), "(\"load config file %q: %w\", configPath, err)")
-	g.P("\t\t}")
-	g.P("\t}")
-	g.P("\tif err := applyRuntimeConfigEnv(cfg, presence); err != nil {")
-	g.P("\t\treturn nil, nil, ", fmtPkg.Ident("Errorf"), "(\"apply env: %w\", err)")
-	g.P("\t}")
-	g.P("\tif err := applyRuntimeConfigBootstrap(cfg, presence, bootstrapValues); err != nil {")
-	g.P("\t\treturn nil, nil, ", fmtPkg.Ident("Errorf"), "(\"apply bootstrap: %w\", err)")
-	g.P("\t}")
-	g.P("\tif err := validateRuntimeConfigRequired(presence); err != nil {")
-	g.P("\t\treturn nil, nil, err")
-	g.P("\t}")
-	g.P("\treturn cfg, rest, nil")
 	g.P("}")
 	g.P()
 }
@@ -149,11 +116,13 @@ func emitApplyDefaults(g *protogen.GeneratedFile, cfg *configInfo) {
 	g.P()
 }
 
-func emitApplyEnv(g *protogen.GeneratedFile, cfg *configInfo) {
+func emitApplyEnvWith(g *protogen.GeneratedFile, cfg *configInfo) {
 	g.P(
-		"func applyRuntimeConfigEnv(cfg *",
+		"func applyRuntimeConfigEnvWith(cfg *",
 		cfg.Message.GoName,
-		", presence *runtimeConfigFieldPresence) error {",
+		", presence *runtimeConfigFieldPresence, lookup ",
+		configPkg.Ident("EnvLookup"),
+		") error {",
 	)
 	for _, field := range cfg.Message.Fields {
 		if !field.HasEnv {
@@ -163,9 +132,7 @@ func emitApplyEnv(g *protogen.GeneratedFile, cfg *configInfo) {
 		g.P(
 			"\tif err := ",
 			configPkg.Ident("ApplyEnv"),
-			"(",
-			osPkg.Ident("LookupEnv"),
-			", ",
+			"(lookup, ",
 			strconv.Quote(field.Env),
 			", func(raw string) error {",
 		)
@@ -276,21 +243,64 @@ func emitValidateRequired(g *protogen.GeneratedFile, cfg *configInfo) {
 	g.P()
 }
 
-func emitParseBootstrapArgs(g *protogen.GeneratedFile, cfg *configInfo) {
-	g.P("func parseRuntimeConfigBootstrap(argv []string) (string, map[string]string, []string, error) {")
-	g.P("\tspecs := []*", configPkg.Ident("BootstrapSpec"), "{")
+func emitConfigSpec(g *protogen.GeneratedFile, cfg *configInfo) {
+	g.P("// ConfigSpec returns a ", configPkg.Ident("Spec"), " for use with ", configPkg.Ident("Load"), ".")
+	g.P("func (x *", cfg.Message.GoName, ") ConfigSpec() *", configPkg.Ident("Spec"), " {")
+	g.P("\tpresence := &runtimeConfigFieldPresence{}")
+	g.P("\treturn &", configPkg.Ident("Spec"), "{")
+
+	// EnvNames
+	g.P("\t\tEnvNames: map[string]string{")
+	for _, field := range cfg.Message.Fields {
+		if !field.HasEnv {
+			continue
+		}
+		g.P(
+			"\t\t\t",
+			strconv.Quote(field.Env),
+			": ",
+			strconv.Quote(cfg.Message.GoName+"."+field.ProtoName),
+			",",
+		)
+	}
+	g.P("\t\t},")
+
+	// BootstrapSpecs
+	g.P("\t\tBootstrapSpecs: []*", configPkg.Ident("BootstrapSpec"), "{")
 	for _, field := range cfg.Message.Fields {
 		if !field.Bootstrap {
 			continue
 		}
-		g.P("\t\t&", configPkg.Ident("BootstrapSpec"), "{Flag: ", strconv.Quote(field.FlagName()), "},")
+		g.P("\t\t\t{Flag: ", strconv.Quote(field.FlagName()), "},")
 	}
+	g.P("\t\t},")
+
+	// ApplyDefaults
+	g.P("\t\tApplyDefaults: func() error {")
+	g.P("\t\t\treturn applyRuntimeConfigDefaults(x, presence)")
+	g.P("\t\t},")
+
+	// ApplyConfigFile
+	g.P("\t\tApplyConfigFile: func(path string) error {")
+	g.P("\t\t\treturn loadRuntimeConfigFile(x, presence, path)")
+	g.P("\t\t},")
+
+	// ApplyEnv
+	g.P("\t\tApplyEnv: func(lookup ", configPkg.Ident("EnvLookup"), ") error {")
+	g.P("\t\t\treturn applyRuntimeConfigEnvWith(x, presence, lookup)")
+	g.P("\t\t},")
+
+	// ApplyBootstrap
+	g.P("\t\tApplyBootstrap: func(values map[string]string) error {")
+	g.P("\t\t\treturn applyRuntimeConfigBootstrap(x, presence, values)")
+	g.P("\t\t},")
+
+	// ValidateRequired
+	g.P("\t\tValidateRequired: func() error {")
+	g.P("\t\t\treturn validateRuntimeConfigRequired(presence)")
+	g.P("\t\t},")
+
 	g.P("\t}")
-	g.P("\tresult, err := ", configPkg.Ident("ParseBootstrapArgs"), "(argv, specs)")
-	g.P("\tif err != nil {")
-	g.P("\t\treturn \"\", nil, nil, err")
-	g.P("\t}")
-	g.P("\treturn result.ConfigPath, result.Values, result.Rest, nil")
 	g.P("}")
 	g.P()
 }

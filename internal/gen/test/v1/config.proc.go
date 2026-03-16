@@ -7,40 +7,11 @@ import (
 	config "github.com/shuymn/procframe/config"
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	proto "google.golang.org/protobuf/proto"
-	os "os"
 	strconv "strconv"
 )
 
 type runtimeConfigFieldPresence struct {
 	ApiToken bool
-}
-
-// LoadRuntimeConfig resolves runtime config and returns remaining procedure args.
-func LoadRuntimeConfig(argv []string) (*RuntimeConfig, []string, error) {
-	cfg := &RuntimeConfig{}
-	presence := &runtimeConfigFieldPresence{}
-	if err := applyRuntimeConfigDefaults(cfg, presence); err != nil {
-		return nil, nil, fmt.Errorf("apply defaults: %w", err)
-	}
-	configPath, bootstrapValues, rest, err := parseRuntimeConfigBootstrap(argv)
-	if err != nil {
-		return nil, nil, err
-	}
-	if configPath != "" {
-		if err := loadRuntimeConfigFile(cfg, presence, configPath); err != nil {
-			return nil, nil, fmt.Errorf("load config file %q: %w", configPath, err)
-		}
-	}
-	if err := applyRuntimeConfigEnv(cfg, presence); err != nil {
-		return nil, nil, fmt.Errorf("apply env: %w", err)
-	}
-	if err := applyRuntimeConfigBootstrap(cfg, presence, bootstrapValues); err != nil {
-		return nil, nil, fmt.Errorf("apply bootstrap: %w", err)
-	}
-	if err := validateRuntimeConfigRequired(presence); err != nil {
-		return nil, nil, err
-	}
-	return cfg, rest, nil
 }
 
 func loadRuntimeConfigFile(cfg *RuntimeConfig, presence *runtimeConfigFieldPresence, filePath string) error {
@@ -73,8 +44,8 @@ func applyRuntimeConfigDefaults(cfg *RuntimeConfig, presence *runtimeConfigField
 	return nil
 }
 
-func applyRuntimeConfigEnv(cfg *RuntimeConfig, presence *runtimeConfigFieldPresence) error {
-	if err := config.ApplyEnv(os.LookupEnv, "SERVICE_NAME", func(raw string) error {
+func applyRuntimeConfigEnvWith(cfg *RuntimeConfig, presence *runtimeConfigFieldPresence, lookup config.EnvLookup) error {
+	if err := config.ApplyEnv(lookup, "SERVICE_NAME", func(raw string) error {
 		v, err := parseRuntimeConfigFieldServiceName(raw)
 		if err != nil {
 			return err
@@ -84,7 +55,7 @@ func applyRuntimeConfigEnv(cfg *RuntimeConfig, presence *runtimeConfigFieldPrese
 	}); err != nil {
 		return fmt.Errorf("RuntimeConfig.service_name from env SERVICE_NAME: %w", err)
 	}
-	if err := config.ApplyEnv(os.LookupEnv, "LOG_LEVEL", func(raw string) error {
+	if err := config.ApplyEnv(lookup, "LOG_LEVEL", func(raw string) error {
 		v, err := parseRuntimeConfigFieldLogLevel(raw)
 		if err != nil {
 			return err
@@ -94,7 +65,7 @@ func applyRuntimeConfigEnv(cfg *RuntimeConfig, presence *runtimeConfigFieldPrese
 	}); err != nil {
 		return fmt.Errorf("RuntimeConfig.log_level from env LOG_LEVEL: %w", err)
 	}
-	if err := config.ApplyEnv(os.LookupEnv, "TIMEOUT_SEC", func(raw string) error {
+	if err := config.ApplyEnv(lookup, "TIMEOUT_SEC", func(raw string) error {
 		v, err := parseRuntimeConfigFieldTimeoutSec(raw)
 		if err != nil {
 			return err
@@ -104,7 +75,7 @@ func applyRuntimeConfigEnv(cfg *RuntimeConfig, presence *runtimeConfigFieldPrese
 	}); err != nil {
 		return fmt.Errorf("RuntimeConfig.timeout_sec from env TIMEOUT_SEC: %w", err)
 	}
-	if err := config.ApplyEnv(os.LookupEnv, "API_TOKEN", func(raw string) error {
+	if err := config.ApplyEnv(lookup, "API_TOKEN", func(raw string) error {
 		v, err := parseRuntimeConfigFieldApiToken(raw)
 		if err != nil {
 			return fmt.Errorf("invalid secret value")
@@ -115,7 +86,7 @@ func applyRuntimeConfigEnv(cfg *RuntimeConfig, presence *runtimeConfigFieldPrese
 	}); err != nil {
 		return fmt.Errorf("RuntimeConfig.api_token from env API_TOKEN: %w", err)
 	}
-	if err := config.ApplyEnv(os.LookupEnv, "SECRET_PORT", func(raw string) error {
+	if err := config.ApplyEnv(lookup, "SECRET_PORT", func(raw string) error {
 		v, err := parseRuntimeConfigFieldSecretPort(raw)
 		if err != nil {
 			return fmt.Errorf("invalid secret value")
@@ -160,17 +131,38 @@ func validateRuntimeConfigRequired(presence *runtimeConfigFieldPresence) error {
 	return nil
 }
 
-func parseRuntimeConfigBootstrap(argv []string) (string, map[string]string, []string, error) {
-	specs := []*config.BootstrapSpec{
-		&config.BootstrapSpec{Flag: "log-level"},
-		&config.BootstrapSpec{Flag: "timeout-sec"},
-		&config.BootstrapSpec{Flag: "secret-port"},
+// ConfigSpec returns a config.Spec for use with config.Load.
+func (x *RuntimeConfig) ConfigSpec() *config.Spec {
+	presence := &runtimeConfigFieldPresence{}
+	return &config.Spec{
+		EnvNames: map[string]string{
+			"SERVICE_NAME": "RuntimeConfig.service_name",
+			"LOG_LEVEL":    "RuntimeConfig.log_level",
+			"TIMEOUT_SEC":  "RuntimeConfig.timeout_sec",
+			"API_TOKEN":    "RuntimeConfig.api_token",
+			"SECRET_PORT":  "RuntimeConfig.secret_port",
+		},
+		BootstrapSpecs: []*config.BootstrapSpec{
+			{Flag: "log-level"},
+			{Flag: "timeout-sec"},
+			{Flag: "secret-port"},
+		},
+		ApplyDefaults: func() error {
+			return applyRuntimeConfigDefaults(x, presence)
+		},
+		ApplyConfigFile: func(path string) error {
+			return loadRuntimeConfigFile(x, presence, path)
+		},
+		ApplyEnv: func(lookup config.EnvLookup) error {
+			return applyRuntimeConfigEnvWith(x, presence, lookup)
+		},
+		ApplyBootstrap: func(values map[string]string) error {
+			return applyRuntimeConfigBootstrap(x, presence, values)
+		},
+		ValidateRequired: func() error {
+			return validateRuntimeConfigRequired(presence)
+		},
 	}
-	result, err := config.ParseBootstrapArgs(argv, specs)
-	if err != nil {
-		return "", nil, nil, err
-	}
-	return result.ConfigPath, result.Values, result.Rest, nil
 }
 
 type runtimeConfigFormatView RuntimeConfig

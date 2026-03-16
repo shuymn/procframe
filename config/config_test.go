@@ -354,7 +354,7 @@ func TestRequiredAndRedaction(t *testing.T) {
 	}
 }
 
-func TestGeneratedLoadRuntimeConfig(t *testing.T) {
+func TestGeneratedConfigLoad(t *testing.T) {
 	t.Run("applies defaults file env bootstrap in order", func(t *testing.T) {
 		t.Setenv("SERVICE_NAME", "from-env")
 		t.Setenv("LOG_LEVEL", "debug")
@@ -365,13 +365,13 @@ func TestGeneratedLoadRuntimeConfig(t *testing.T) {
 			t.Fatalf("write config file: %v", err)
 		}
 
-		cfg, rest, err := testv1.LoadRuntimeConfig([]string{
+		cfg, rest, err := config.Load[testv1.RuntimeConfig]([]string{
 			"--config", path,
 			"--timeout-sec", "12",
 			"repo", "pr", "list",
 		})
 		if err != nil {
-			t.Fatalf("LoadRuntimeConfig returned error: %v", err)
+			t.Fatalf("Load returned error: %v", err)
 		}
 
 		if cfg.ServiceName != "from-env" {
@@ -399,9 +399,9 @@ func TestGeneratedLoadRuntimeConfig(t *testing.T) {
 			t.Fatalf("write config file: %v", err)
 		}
 
-		cfg, rest, err := testv1.LoadRuntimeConfig([]string{"--config", path, "echo", "run"})
+		cfg, rest, err := config.Load[testv1.RuntimeConfig]([]string{"--config", path, "echo", "run"})
 		if err != nil {
-			t.Fatalf("LoadRuntimeConfig returned error: %v", err)
+			t.Fatalf("Load returned error: %v", err)
 		}
 		if cfg.TimeoutSec != 0 {
 			t.Fatalf("want timeout overridden to 0 by file, got %d", cfg.TimeoutSec)
@@ -421,9 +421,9 @@ func TestGeneratedLoadRuntimeConfig(t *testing.T) {
 			t.Fatalf("write config file: %v", err)
 		}
 
-		cfg, rest, err := testv1.LoadRuntimeConfig([]string{"--config", path, "echo", "run"})
+		cfg, rest, err := config.Load[testv1.RuntimeConfig]([]string{"--config", path, "echo", "run"})
 		if err != nil {
-			t.Fatalf("LoadRuntimeConfig returned error: %v", err)
+			t.Fatalf("Load returned error: %v", err)
 		}
 		if cfg.ServiceName != "from-file" {
 			t.Fatalf("want service name from protobuf field name, got %q", cfg.ServiceName)
@@ -440,7 +440,7 @@ func TestGeneratedLoadRuntimeConfig(t *testing.T) {
 	})
 
 	t.Run("missing required field returns error", func(t *testing.T) {
-		_, _, err := testv1.LoadRuntimeConfig([]string{"echo", "run"})
+		_, _, err := config.Load[testv1.RuntimeConfig]([]string{"echo", "run"})
 		if err == nil {
 			t.Fatal("expected missing required field error")
 		}
@@ -452,9 +452,9 @@ func TestGeneratedLoadRuntimeConfig(t *testing.T) {
 	t.Run("explicit empty required value is accepted", func(t *testing.T) {
 		t.Setenv("API_TOKEN", "")
 
-		cfg, rest, err := testv1.LoadRuntimeConfig([]string{"echo", "run"})
+		cfg, rest, err := config.Load[testv1.RuntimeConfig]([]string{"echo", "run"})
 		if err != nil {
-			t.Fatalf("LoadRuntimeConfig returned error: %v", err)
+			t.Fatalf("Load returned error: %v", err)
 		}
 		if cfg.ApiToken != "" {
 			t.Fatalf("want explicit empty required value preserved, got %q", cfg.ApiToken)
@@ -466,7 +466,7 @@ func TestGeneratedLoadRuntimeConfig(t *testing.T) {
 
 	t.Run("duplicate bootstrap flag returns error", func(t *testing.T) {
 		t.Setenv("API_TOKEN", "env-token")
-		_, _, err := testv1.LoadRuntimeConfig([]string{
+		_, _, err := config.Load[testv1.RuntimeConfig]([]string{
 			"--timeout-sec", "10",
 			"--timeout-sec", "20",
 			"echo", "run",
@@ -517,7 +517,7 @@ func TestGeneratedLoadRuntimeConfig(t *testing.T) {
 		t.Setenv("API_TOKEN", "env-token")
 		t.Setenv("SECRET_PORT", "not-a-number")
 
-		_, _, err := testv1.LoadRuntimeConfig([]string{"echo", "run"})
+		_, _, err := config.Load[testv1.RuntimeConfig]([]string{"echo", "run"})
 		if err == nil {
 			t.Fatal("expected secret env parse error")
 		}
@@ -532,7 +532,7 @@ func TestGeneratedLoadRuntimeConfig(t *testing.T) {
 	t.Run("secret bootstrap parse errors are redacted", func(t *testing.T) {
 		t.Setenv("API_TOKEN", "env-token")
 
-		_, _, err := testv1.LoadRuntimeConfig([]string{
+		_, _, err := config.Load[testv1.RuntimeConfig]([]string{
 			"--secret-port", "not-a-number",
 			"echo", "run",
 		})
@@ -555,7 +555,7 @@ func TestGeneratedLoadRuntimeConfig(t *testing.T) {
 			t.Fatalf("write config file: %v", err)
 		}
 
-		_, _, err := testv1.LoadRuntimeConfig([]string{
+		_, _, err := config.Load[testv1.RuntimeConfig]([]string{
 			"--config", path,
 			"echo", "run",
 		})
@@ -573,7 +573,7 @@ func TestGeneratedLoadRuntimeConfig(t *testing.T) {
 	t.Run("known bootstrap flag followed by flag-like token returns error", func(t *testing.T) {
 		t.Setenv("API_TOKEN", "env-token")
 
-		_, _, err := testv1.LoadRuntimeConfig([]string{
+		_, _, err := config.Load[testv1.RuntimeConfig]([]string{
 			"--timeout-sec", "--proc-flag",
 			"echo", "run",
 		})

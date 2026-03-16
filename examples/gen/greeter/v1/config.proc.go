@@ -7,38 +7,9 @@ import (
 	config "github.com/shuymn/procframe/config"
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	proto "google.golang.org/protobuf/proto"
-	os "os"
 )
 
 type runtimeConfigFieldPresence struct {
-}
-
-// LoadRuntimeConfig resolves runtime config and returns remaining procedure args.
-func LoadRuntimeConfig(argv []string) (*GreeterConfig, []string, error) {
-	cfg := &GreeterConfig{}
-	presence := &runtimeConfigFieldPresence{}
-	if err := applyRuntimeConfigDefaults(cfg, presence); err != nil {
-		return nil, nil, fmt.Errorf("apply defaults: %w", err)
-	}
-	configPath, bootstrapValues, rest, err := parseRuntimeConfigBootstrap(argv)
-	if err != nil {
-		return nil, nil, err
-	}
-	if configPath != "" {
-		if err := loadRuntimeConfigFile(cfg, presence, configPath); err != nil {
-			return nil, nil, fmt.Errorf("load config file %q: %w", configPath, err)
-		}
-	}
-	if err := applyRuntimeConfigEnv(cfg, presence); err != nil {
-		return nil, nil, fmt.Errorf("apply env: %w", err)
-	}
-	if err := applyRuntimeConfigBootstrap(cfg, presence, bootstrapValues); err != nil {
-		return nil, nil, fmt.Errorf("apply bootstrap: %w", err)
-	}
-	if err := validateRuntimeConfigRequired(presence); err != nil {
-		return nil, nil, err
-	}
-	return cfg, rest, nil
 }
 
 func loadRuntimeConfigFile(cfg *GreeterConfig, presence *runtimeConfigFieldPresence, filePath string) error {
@@ -64,8 +35,8 @@ func applyRuntimeConfigDefaults(cfg *GreeterConfig, presence *runtimeConfigField
 	return nil
 }
 
-func applyRuntimeConfigEnv(cfg *GreeterConfig, presence *runtimeConfigFieldPresence) error {
-	if err := config.ApplyEnv(os.LookupEnv, "GREETER_PREFIX", func(raw string) error {
+func applyRuntimeConfigEnvWith(cfg *GreeterConfig, presence *runtimeConfigFieldPresence, lookup config.EnvLookup) error {
+	if err := config.ApplyEnv(lookup, "GREETER_PREFIX", func(raw string) error {
 		v, err := parseRuntimeConfigFieldPrefix(raw)
 		if err != nil {
 			return err
@@ -75,7 +46,7 @@ func applyRuntimeConfigEnv(cfg *GreeterConfig, presence *runtimeConfigFieldPrese
 	}); err != nil {
 		return fmt.Errorf("GreeterConfig.prefix from env GREETER_PREFIX: %w", err)
 	}
-	if err := config.ApplyEnv(os.LookupEnv, "GREETER_SUFFIX", func(raw string) error {
+	if err := config.ApplyEnv(lookup, "GREETER_SUFFIX", func(raw string) error {
 		v, err := parseRuntimeConfigFieldSuffix(raw)
 		if err != nil {
 			return err
@@ -103,15 +74,33 @@ func validateRuntimeConfigRequired(presence *runtimeConfigFieldPresence) error {
 	return nil
 }
 
-func parseRuntimeConfigBootstrap(argv []string) (string, map[string]string, []string, error) {
-	specs := []*config.BootstrapSpec{
-		&config.BootstrapSpec{Flag: "prefix"},
+// ConfigSpec returns a config.Spec for use with config.Load.
+func (x *GreeterConfig) ConfigSpec() *config.Spec {
+	presence := &runtimeConfigFieldPresence{}
+	return &config.Spec{
+		EnvNames: map[string]string{
+			"GREETER_PREFIX": "GreeterConfig.prefix",
+			"GREETER_SUFFIX": "GreeterConfig.suffix",
+		},
+		BootstrapSpecs: []*config.BootstrapSpec{
+			{Flag: "prefix"},
+		},
+		ApplyDefaults: func() error {
+			return applyRuntimeConfigDefaults(x, presence)
+		},
+		ApplyConfigFile: func(path string) error {
+			return loadRuntimeConfigFile(x, presence, path)
+		},
+		ApplyEnv: func(lookup config.EnvLookup) error {
+			return applyRuntimeConfigEnvWith(x, presence, lookup)
+		},
+		ApplyBootstrap: func(values map[string]string) error {
+			return applyRuntimeConfigBootstrap(x, presence, values)
+		},
+		ValidateRequired: func() error {
+			return validateRuntimeConfigRequired(presence)
+		},
 	}
-	result, err := config.ParseBootstrapArgs(argv, specs)
-	if err != nil {
-		return "", nil, nil, err
-	}
-	return result.ConfigPath, result.Values, result.Rest, nil
 }
 
 type greeterConfigFormatView GreeterConfig

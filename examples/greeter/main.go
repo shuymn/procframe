@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/shuymn/procframe"
+	"github.com/shuymn/procframe/config"
 	greeterv1 "github.com/shuymn/procframe/examples/gen/greeter/v1"
 	"github.com/shuymn/procframe/transport/cli"
 )
@@ -28,7 +29,7 @@ func (h *handler) Greet(
 }
 
 func main() {
-	cfg, rest, err := greeterv1.LoadRuntimeConfig(os.Args[1:])
+	cfg, rest, err := config.Load[greeterv1.GreeterConfig](os.Args[1:])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
