@@ -19,74 +19,89 @@ const (
 	CodeConflict         Code = "conflict"
 )
 
-// Error is a structured error interface recognised by all transports.
-// Any type implementing this interface is handled by the transport layer
-// for exit-code mapping, JSON output, etc.
-type Error interface {
-	error
-	Code() Code
-	Message() string
-	IsRetryable() bool
+// Status is the transport-facing error metadata produced at boundaries.
+type Status struct {
+	Code      Code
+	Message   string
+	Retryable bool
 }
 
-// StatusError is the default implementation of the [Error] interface
-// provided by procframe.
+// ErrorMapper maps an error to a transport-facing [Status].
+// It returns false when the error should remain unclassified.
+type ErrorMapper func(error) (Status, bool)
+
+// StatusError is the default structured error wrapper provided by procframe.
 type StatusError struct {
-	code      Code
-	msg       string
-	cause     error
-	retryable bool
+	status Status
+	cause  error
 }
 
 // NewError creates a [StatusError] with the given code and message.
 func NewError(code Code, msg string) *StatusError {
-	return &StatusError{code: code, msg: msg}
+	return &StatusError{
+		status: Status{
+			Code:    code,
+			Message: msg,
+		},
+	}
 }
 
 // Errorf creates a [StatusError] with a formatted message.
 func Errorf(code Code, format string, args ...any) *StatusError {
-	return &StatusError{code: code, msg: fmt.Sprintf(format, args...)}
+	return NewError(code, fmt.Sprintf(format, args...))
 }
 
 // WrapError creates a [StatusError] that wraps a cause error.
 func WrapError(code Code, msg string, cause error) *StatusError {
-	return &StatusError{code: code, msg: msg, cause: cause}
+	err := NewError(code, msg)
+	err.cause = cause
+	return err
+}
+
+// StatusOf extracts a [Status] from an error chain.
+// It returns false when the chain does not contain a [StatusError].
+func StatusOf(err error) (Status, bool) {
+	var statusErr *StatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.Status(), true
+	}
+	return Status{}, false
 }
 
 // CodeOf extracts the [Code] from an error chain. It returns the code
-// and true if the chain contains an [Error], or ("", false) otherwise.
+// and true if the chain contains a [StatusError], or ("", false) otherwise.
 func CodeOf(err error) (Code, bool) {
-	var pfErr Error
-	if errors.As(err, &pfErr) {
-		return pfErr.Code(), true
+	status, ok := StatusOf(err)
+	if ok {
+		return status.Code, true
 	}
 	return "", false
 }
 
 // Code returns the canonical error code.
-func (e *StatusError) Code() Code { return e.code }
+func (e *StatusError) Code() Code { return e.status.Code }
 
 // Message returns the human-readable error message.
-func (e *StatusError) Message() string { return e.msg }
+func (e *StatusError) Message() string { return e.status.Message }
 
 // IsRetryable reports whether the caller may retry the operation.
-func (e *StatusError) IsRetryable() bool { return e.retryable }
+func (e *StatusError) IsRetryable() bool { return e.status.Retryable }
+
+// Status returns the transport-facing status carried by the error.
+func (e *StatusError) Status() Status { return e.status }
 
 // WithRetryable returns a copy of e with the retryable flag set to true.
 func (e *StatusError) WithRetryable() *StatusError {
-	return &StatusError{
-		code:      e.code,
-		msg:       e.msg,
-		cause:     e.cause,
-		retryable: true,
-	}
+	next := *e
+	next.status.Retryable = true
+	return &next
 }
 
 // Error returns a string in the form "<code>: <message>".
 // The cause is intentionally omitted; use [errors.Unwrap] to traverse
 // the chain.
 func (e *StatusError) Error() string {
-	return fmt.Sprintf("%s: %s", e.code, e.msg)
+	return fmt.Sprintf("%s: %s", e.status.Code, e.status.Message)
 }
 
 // Unwrap returns the underlying cause so that [errors.Is] and

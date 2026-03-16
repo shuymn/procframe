@@ -11,8 +11,7 @@ import (
 
 // Compile-time assertions.
 var (
-	_ procframe.Error = (*procframe.StatusError)(nil) //nolint:errcheck // compile-time interface assertion
-	_ error           = (*procframe.StatusError)(nil) //nolint:errcheck // compile-time interface assertion
+	_ error = (*procframe.StatusError)(nil) //nolint:errcheck // compile-time interface assertion
 )
 
 func TestStatusError_Error(t *testing.T) {
@@ -50,6 +49,9 @@ func TestStatusError_Accessors(t *testing.T) {
 	t.Parallel()
 
 	e := procframe.NewError(procframe.CodeNotFound, "gone")
+	if got := e.Status(); got.Code != procframe.CodeNotFound || got.Message != "gone" || got.Retryable {
+		t.Fatalf("Status() = %+v, want code/message/retryable=false", got)
+	}
 	if e.Code() != procframe.CodeNotFound {
 		t.Errorf("Code() = %q, want %q", e.Code(), procframe.CodeNotFound)
 	}
@@ -94,12 +96,12 @@ func TestStatusError_WithRetryable(t *testing.T) {
 
 		e := procframe.NewError(procframe.CodeUnavailable, "busy").WithRetryable()
 
-		var target procframe.Error
-		if !errors.As(e, &target) {
-			t.Fatal("errors.As failed")
+		status, ok := procframe.StatusOf(e)
+		if !ok {
+			t.Fatal("StatusOf returned false")
 		}
 
-		if !target.IsRetryable() {
+		if !status.Retryable {
 			t.Error("IsRetryable() = false, want true")
 		}
 	})
@@ -109,12 +111,12 @@ func TestStatusError_WithRetryable(t *testing.T) {
 
 		e := procframe.NewError(procframe.CodeNotFound, "gone")
 
-		var target procframe.Error
-		if !errors.As(e, &target) {
-			t.Fatal("errors.As failed")
+		status, ok := procframe.StatusOf(e)
+		if !ok {
+			t.Fatal("StatusOf returned false")
 		}
 
-		if target.IsRetryable() {
+		if status.Retryable {
 			t.Error("IsRetryable() = true, want false")
 		}
 	})
@@ -140,33 +142,22 @@ func TestStatusError_ErrorsIs(t *testing.T) {
 	}
 }
 
-func TestStatusError_ErrorsAs_Interface(t *testing.T) {
+func TestStatusOf(t *testing.T) {
 	t.Parallel()
 
 	inner := procframe.NewError(procframe.CodeNotFound, "inner")
 	outer := procframe.WrapError(procframe.CodeInternal, "outer", inner)
 
-	var target procframe.Error
-	if !errors.As(outer, &target) {
-		t.Fatal("errors.As failed")
-	}
-
-	if target.Code() != procframe.CodeInternal {
-		t.Errorf("Code() = %q, want %q", target.Code(), procframe.CodeInternal)
-	}
-
-	// Traverse to the inner error through the chain.
-	unwrapper, ok := target.(interface{ Unwrap() error })
+	status, ok := procframe.StatusOf(outer)
 	if !ok {
-		t.Fatal("target does not implement Unwrap")
-	}
-	var inner2 procframe.Error
-	if !errors.As(unwrapper.Unwrap(), &inner2) {
-		t.Fatal("errors.As on unwrapped failed")
+		t.Fatal("StatusOf returned false")
 	}
 
-	if inner2.Code() != procframe.CodeNotFound {
-		t.Errorf("inner Code() = %q, want %q", inner2.Code(), procframe.CodeNotFound)
+	if status.Code != procframe.CodeInternal {
+		t.Errorf("Code = %q, want %q", status.Code, procframe.CodeInternal)
+	}
+	if status.Message != "outer" {
+		t.Errorf("Message = %q, want %q", status.Message, "outer")
 	}
 }
 
@@ -219,36 +210,15 @@ func TestCodeOf(t *testing.T) {
 	})
 }
 
-// customError is a user-defined type that implements procframe.Error.
-type customError struct {
-	code procframe.Code
-	msg  string
-}
-
-func (e *customError) Error() string        { return fmt.Sprintf("%s: %s", e.code, e.msg) }
-func (e *customError) Code() procframe.Code { return e.code }
-func (e *customError) Message() string      { return e.msg }
-func (e *customError) IsRetryable() bool    { return false }
-
-func TestErrorsAs_UserDefinedError(t *testing.T) {
+func TestStatusOf_NonStatusError(t *testing.T) {
 	t.Parallel()
 
-	custom := &customError{code: procframe.CodeConflict, msg: "version mismatch"}
-
-	var target procframe.Error
-	if !errors.As(custom, &target) {
-		t.Fatal("errors.As failed for user-defined Error")
-	}
-	if target.Code() != procframe.CodeConflict {
-		t.Errorf("Code() = %q, want %q", target.Code(), procframe.CodeConflict)
-	}
-
-	// CodeOf should also work with user-defined types.
-	code, ok := procframe.CodeOf(custom)
-	if !ok {
-		t.Fatal("CodeOf returned false for user-defined Error")
-	}
-	if code != procframe.CodeConflict {
-		t.Errorf("CodeOf = %q, want %q", code, procframe.CodeConflict)
+	_, ok := procframe.StatusOf(nonStatusError{})
+	if ok {
+		t.Fatal("StatusOf returned true for non-status error")
 	}
 }
+
+type nonStatusError struct{}
+
+func (nonStatusError) Error() string { return "custom" }
