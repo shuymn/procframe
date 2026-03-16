@@ -162,9 +162,8 @@ func (x *PRLabel) GetName() string {
 type PRScope struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	State PRState                `protobuf:"varint,1,opt,name=state,proto3,enum=test.v1.PRState" json:"state,omitempty"`
-	// The following fields exercise unsupported bind_into field types.
-	// They must be silently skipped in group flags (no flat flag generation)
-	// but still compile correctly.
+	// The following fields exercise complex bind_into field types.
+	// repeated string → multi-value flag, message → JSON string flag.
 	Labels        []string `protobuf:"bytes,2,rep,name=labels,proto3" json:"labels,omitempty"`
 	PrimaryLabel  *PRLabel `protobuf:"bytes,3,opt,name=primary_label,json=primaryLabel,proto3" json:"primary_label,omitempty"`
 	unknownFields protoimpl.UnknownFields

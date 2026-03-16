@@ -116,6 +116,8 @@ var schemaDataPRServiceAll = []cli.CommandInfo{
 // for PRService.
 func NewPRServiceCLIRunner(h PRServiceHandler, opts ...cli.Option) *cli.Runner {
 	var bind_pr_state int32
+	var bind_pr_labels []string
+	var bind_pr_primary_label string
 	node_repo_pr_list := &cli.Node{
 		Segment: "list",
 		Summary: "List pull requests",
@@ -132,16 +134,30 @@ func NewPRServiceCLIRunner(h PRServiceHandler, opts ...cli.Option) *cli.Runner {
 			} else {
 				fs := flag.NewFlagSet("list", flag.ContinueOnError)
 				fs.SetOutput(io.Discard)
+				var flag_repo string
+				fs.StringVar(&flag_repo, "repo", "", "(JSON)")
 				var flag_limit int32
 				fs.Var(cli.NewInt32Value(&flag_limit), "limit", "Maximum number of results")
 				if err := fs.Parse(args); err != nil {
 					return err
 				}
 				req = &PRListRequest{
-					Pr: &PRScope{
-						State: PRState(bind_pr_state),
-					},
 					Limit: flag_limit,
+				}
+				bind_prMsg := &PRScope{
+					State:  PRState(bind_pr_state),
+					Labels: bind_pr_labels,
+				}
+				if bind_pr_primary_label != "" {
+					if err := cli.UnmarshalJSONField(bind_prMsg, "primaryLabel", bind_pr_primary_label); err != nil {
+						return err
+					}
+				}
+				req.Pr = bind_prMsg
+				if flag_repo != "" {
+					if err := cli.UnmarshalJSONField(req, "repo", flag_repo); err != nil {
+						return err
+					}
 				}
 			}
 			resp, err := procframe.InvokeUnary(ctx, procframe.CallSpec{Procedure: "/test.v1.PRService/List", Transport: procframe.TransportCLI, StreamType: procframe.StreamTypeUnary}, &procframe.Request[PRListRequest]{
@@ -168,6 +184,7 @@ func NewPRServiceCLIRunner(h PRServiceHandler, opts ...cli.Option) *cli.Runner {
 		},
 		HelpFlags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("", flag.ContinueOnError)
+			fs.String("repo", "", "(JSON)")
 			fs.Var(cli.NewInt32Value(nil), "limit", "Maximum number of results")
 			return fs
 		},
@@ -182,6 +199,8 @@ func NewPRServiceCLIRunner(h PRServiceHandler, opts ...cli.Option) *cli.Runner {
 				{CLIValue: "open", Number: 1},
 				{CLIValue: "closed", Number: 2},
 			}, "PRState"), "state", "Filter by PR state (values: open, closed)")
+			fs.Var(cli.NewStringSliceValue(&bind_pr_labels), "labels", "")
+			fs.StringVar(&bind_pr_primary_label, "primary-label", "", "(JSON)")
 			return fs
 		}(),
 		Children: map[string]*cli.Node{

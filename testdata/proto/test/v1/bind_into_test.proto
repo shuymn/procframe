@@ -22,9 +22,8 @@ message PRLabel {
 
 message PRScope {
   PRState state = 1 [(procframe.options.v1.field).description = "Filter by PR state"];
-  // The following fields exercise unsupported bind_into field types.
-  // They must be silently skipped in group flags (no flat flag generation)
-  // but still compile correctly.
+  // The following fields exercise complex bind_into field types.
+  // repeated string → multi-value flag, message → JSON string flag.
   repeated string labels = 2;
   PRLabel primary_label = 3;
 }

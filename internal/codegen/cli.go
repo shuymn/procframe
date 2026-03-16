@@ -11,6 +11,7 @@ import (
 )
 
 var (
+	base64Pkg       = protogen.GoImportPath("encoding/base64")
 	contextPkg      = protogen.GoImportPath("context")
 	encodingJSONPkg = protogen.GoImportPath("encoding/json")
 	flagPkg         = protogen.GoImportPath("flag")
@@ -272,14 +273,14 @@ func emitLeafDecl(g *protogen.GeneratedFile, d nodeDecl, svc *protogen.Service, 
 	g.P("\t\t},")
 
 	// HelpFlags factory for help display
-	emitHelpFlags(g, method.Input)
+	emitHelpFlags(g, method.Input, bindCtxs)
 
 	g.P("\t}")
 }
 
 // emitHelpFlags emits a HelpFlags factory function on the node
 // that returns a FlagSet with flag definitions for help display.
-func emitHelpFlags(g *protogen.GeneratedFile, msg *protogen.Message) {
+func emitHelpFlags(g *protogen.GeneratedFile, msg *protogen.Message, bindCtxs []bindIntoCtx) {
 	g.P("\t\tHelpFlags: func() *", flagPkg.Ident("FlagSet"), " {")
 	g.P(
 		"\t\t\tfs := ",
@@ -289,6 +290,10 @@ func emitHelpFlags(g *protogen.GeneratedFile, msg *protogen.Message) {
 		")",
 	)
 	for _, field := range msg.Fields {
+		protoName := string(field.Desc.Name())
+		if findBindCtx(bindCtxs, protoName) != nil {
+			continue
+		}
 		emitHelpFlagReg(g, field, "\t\t\t")
 	}
 	g.P("\t\t\treturn fs")
@@ -303,49 +308,76 @@ func emitHelpFlagReg(g *protogen.GeneratedFile, field *protogen.Field, indent st
 	qName := fmt.Sprintf("%q", flagName)
 	qUsage := fmt.Sprintf("%q", usage)
 
-	if field.Desc.IsList() && field.Desc.Kind() == protoreflect.StringKind {
-		g.P(
-			indent, "fs.Var(",
-			cliPkg.Ident("NewStringSliceValue"),
-			"(nil), ", qName, ", ", qUsage, ")",
-		)
+	// Map fields → string flag for help
+	if field.Desc.IsMap() {
+		g.P(indent, "fs.String(", qName, ", ", `""`, ", ", qUsage, ")")
 		return
 	}
 
+	// Repeated fields
+	if field.Desc.IsList() {
+		emitHelpRepeatedFlagReg(g, field, indent, qName, qUsage)
+		return
+	}
+
+	// Singular enum
 	if field.Desc.Kind() == protoreflect.EnumKind {
-		typeName := string(field.Enum.Desc.Name())
-		g.P(
-			indent, "fs.Var(",
-			cliPkg.Ident("NewEnumValue"),
-			"(nil, []", cliPkg.Ident("EnumMapping"), "{",
-		)
-		emitEnumMappingEntries(g, field.Enum, indent)
-		g.P(
-			indent, "}, ",
-			fmt.Sprintf("%q", typeName),
-			"), ", qName, ", ", qUsage, ")",
-		)
+		emitHelpEnumFlagReg(g, field, indent, qName, qUsage)
 		return
 	}
 
+	// Singular scalar/message/bytes
 	ti := resolveFieldType(field)
 	if ti == nil {
 		return
 	}
-
 	if ti.stdFlagFunc != "" {
 		stdFunc := strings.TrimSuffix(ti.stdFlagFunc, "Var")
-		g.P(
-			indent, "fs.", stdFunc, "(",
-			qName, ", ", ti.defaultVal, ", ", qUsage, ")",
-		)
+		g.P(indent, "fs.", stdFunc, "(", qName, ", ", ti.defaultVal, ", ", qUsage, ")")
 	} else {
-		g.P(
-			indent, "fs.Var(",
-			cliPkg.Ident(ti.constructor),
-			"(nil), ", qName, ", ", qUsage, ")",
-		)
+		g.P(indent, "fs.Var(", cliPkg.Ident(ti.constructor), "(nil), ", qName, ", ", qUsage, ")")
 	}
+}
+
+func emitHelpRepeatedFlagReg(
+	g *protogen.GeneratedFile,
+	field *protogen.Field,
+	indent, qName, qUsage string,
+) {
+	switch field.Desc.Kind() {
+	case protoreflect.MessageKind, protoreflect.BytesKind, protoreflect.GroupKind:
+		g.P(indent, "fs.String(", qName, ", ", `""`, ", ", qUsage, ")")
+	case protoreflect.EnumKind:
+		typeName := string(field.Enum.Desc.Name())
+		g.P(indent, "fs.Var(", cliPkg.Ident("NewEnumSliceValue"),
+			"(nil, []", cliPkg.Ident("EnumMapping"), "{")
+		emitEnumMappingEntries(g, field.Enum, indent)
+		g.P(indent, "}, ", fmt.Sprintf("%q", typeName), "), ", qName, ", ", qUsage, ")")
+	case protoreflect.StringKind:
+		g.P(indent, "fs.Var(", cliPkg.Ident("NewStringSliceValue"), "(nil), ", qName, ", ", qUsage, ")")
+	case protoreflect.BoolKind,
+		protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind,
+		protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind,
+		protoreflect.Uint32Kind, protoreflect.Fixed32Kind,
+		protoreflect.Uint64Kind, protoreflect.Fixed64Kind,
+		protoreflect.FloatKind, protoreflect.DoubleKind:
+		ri := resolveRepeatedFieldType(field)
+		if ri != nil {
+			g.P(indent, "fs.Var(", cliPkg.Ident(ri.constructor), "(nil), ", qName, ", ", qUsage, ")")
+		}
+	}
+}
+
+func emitHelpEnumFlagReg(
+	g *protogen.GeneratedFile,
+	field *protogen.Field,
+	indent, qName, qUsage string,
+) {
+	typeName := string(field.Enum.Desc.Name())
+	g.P(indent, "fs.Var(", cliPkg.Ident("NewEnumValue"),
+		"(nil, []", cliPkg.Ident("EnumMapping"), "{")
+	emitEnumMappingEntries(g, field.Enum, indent)
+	g.P(indent, "}, ", fmt.Sprintf("%q", typeName), "), ", qName, ", ", qUsage, ")")
 }
 
 // emitRequestParsing emits the --json / flag parsing branching.
@@ -383,13 +415,14 @@ func emitRequestParsing(
 		")",
 	)
 	g.P("\t\t\t\tfs.SetOutput(", ioPkg.Ident("Discard"), ")")
-	emitFlagVars(g, method.Input, "\t\t\t\t")
+	emitFlagVars(g, method.Input, "\t\t\t\t", bindCtxs)
 	g.P("\t\t\t\tif err := fs.Parse(args); err != nil {")
 	g.P("\t\t\t\t\treturn err")
 	g.P("\t\t\t\t}")
 	g.P("\t\t\t\treq = &", method.Input.GoIdent, "{")
 	emitRequestFields(g, method.Input, "\t\t\t\t\t", bindCtxs)
 	g.P("\t\t\t\t}")
+	emitRequestPostAssign(g, method.Input, "\t\t\t\t", bindCtxs)
 	g.P("\t\t\t}")
 }
 
@@ -502,8 +535,17 @@ func emitStreamingHandlerCall(g *protogen.GeneratedFile, method *protogen.Method
 	g.P("\t\t\t}, stream, h.", method.GoName, ", ", cliPkg.Ident("InterceptorsFromContext"), "(ctx)...)")
 }
 
-func emitFlagVars(g *protogen.GeneratedFile, msg *protogen.Message, indent string) {
+func emitFlagVars(
+	g *protogen.GeneratedFile,
+	msg *protogen.Message,
+	indent string,
+	bindCtxs []bindIntoCtx,
+) {
 	for _, field := range msg.Fields {
+		protoName := string(field.Desc.Name())
+		if findBindCtx(bindCtxs, protoName) != nil {
+			continue
+		}
 		emitFlagVar(g, field, indent)
 	}
 }
@@ -521,34 +563,137 @@ func fieldUsage(field *protogen.Field) string {
 			parts = append(parts, "(values: "+strings.Join(values, ", ")+")")
 		}
 	}
+	if isJSONStringFlag(field) {
+		parts = append(parts, "(JSON)")
+	}
+	if !field.Desc.IsList() && field.Desc.Kind() == protoreflect.BytesKind {
+		parts = append(parts, "(base64)")
+	}
 	return strings.Join(parts, " ")
+}
+
+// isJSONStringFlag returns true if the field is exposed as a JSON string flag.
+func isJSONStringFlag(field *protogen.Field) bool {
+	kind := field.Desc.Kind()
+	if field.Desc.IsMap() {
+		return true
+	}
+	if !field.Desc.IsList() &&
+		(kind == protoreflect.MessageKind || kind == protoreflect.GroupKind) {
+		return true
+	}
+	if field.Desc.IsList() &&
+		(kind == protoreflect.MessageKind ||
+			kind == protoreflect.BytesKind ||
+			kind == protoreflect.GroupKind) {
+		return true
+	}
+	return false
 }
 
 func emitFlagVar(g *protogen.GeneratedFile, field *protogen.Field, indent string) {
 	usage := fieldUsage(field)
+	name := fieldToFlagName(string(field.Desc.Name()))
+	varName := "flag_" + string(field.Desc.Name())
 
-	if field.Desc.IsList() && field.Desc.Kind() == protoreflect.StringKind {
-		name := fieldToFlagName(string(field.Desc.Name()))
-		varName := "flag_" + string(field.Desc.Name())
-		g.P(indent, "var ", varName, " []string")
-		emitFsVar(g, indent, "NewStringSliceValue", varName, name, usage)
+	// Map fields → JSON string flag
+	if field.Desc.IsMap() {
+		g.P(indent, "var ", varName, " string")
+		g.P(
+			indent, "fs.StringVar(&", varName, ", ",
+			fmt.Sprintf("%q", name), ", ", `""`, ", ",
+			fmt.Sprintf("%q", usage), ")",
+		)
 		return
 	}
 
+	// Repeated fields
+	if field.Desc.IsList() {
+		switch field.Desc.Kind() {
+		case protoreflect.MessageKind, protoreflect.BytesKind, protoreflect.GroupKind:
+			// JSON string flag
+			g.P(indent, "var ", varName, " string")
+			g.P(
+				indent, "fs.StringVar(&", varName, ", ",
+				fmt.Sprintf("%q", name), ", ", `""`, ", ",
+				fmt.Sprintf("%q", usage), ")",
+			)
+		case protoreflect.EnumKind:
+			emitEnumSliceFlagVar(g, field, indent, usage)
+		case protoreflect.StringKind:
+			g.P(indent, "var ", varName, " []string")
+			emitFsVar(g, indent, "NewStringSliceValue", varName, name, usage)
+		case protoreflect.BoolKind,
+			protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind,
+			protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind,
+			protoreflect.Uint32Kind, protoreflect.Fixed32Kind,
+			protoreflect.Uint64Kind, protoreflect.Fixed64Kind,
+			protoreflect.FloatKind, protoreflect.DoubleKind:
+			ri := resolveRepeatedFieldType(field)
+			if ri == nil {
+				return
+			}
+			g.P(indent, "var ", varName, " ", ri.goType)
+			emitFsVar(g, indent, ri.constructor, varName, name, usage)
+		}
+		return
+	}
+
+	// Singular enum
 	if field.Desc.Kind() == protoreflect.EnumKind {
 		emitEnumFlagVar(g, field, indent, usage)
 		return
 	}
 
+	// Singular scalar/message/bytes
 	ti := resolveFieldType(field)
 	if ti == nil {
 		return
 	}
 
-	name := fieldToFlagName(string(field.Desc.Name()))
-	varName := "flag_" + string(field.Desc.Name())
 	g.P(indent, "var ", varName, " ", ti.goType)
 	emitFlagReg(g, indent, ti, varName, name, usage)
+}
+
+// repeatedFieldTypeInfo maps a repeated field kind to Go slice type and constructor.
+type repeatedFieldTypeInfo struct {
+	goType      string
+	constructor string
+}
+
+func resolveRepeatedFieldType(field *protogen.Field) *repeatedFieldTypeInfo {
+	switch field.Desc.Kind() {
+	case protoreflect.BoolKind:
+		return &repeatedFieldTypeInfo{goType: "[]bool", constructor: "NewBoolSliceValue"}
+	case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
+		return &repeatedFieldTypeInfo{goType: "[]int32", constructor: "NewInt32SliceValue"}
+	case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
+		return &repeatedFieldTypeInfo{goType: "[]int64", constructor: "NewInt64SliceValue"}
+	case protoreflect.Uint32Kind, protoreflect.Fixed32Kind:
+		return &repeatedFieldTypeInfo{goType: "[]uint32", constructor: "NewUint32SliceValue"}
+	case protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
+		return &repeatedFieldTypeInfo{goType: "[]uint64", constructor: "NewUint64SliceValue"}
+	case protoreflect.FloatKind:
+		return &repeatedFieldTypeInfo{goType: "[]float32", constructor: "NewFloat32SliceValue"}
+	case protoreflect.DoubleKind:
+		return &repeatedFieldTypeInfo{goType: "[]float64", constructor: "NewFloat64SliceValue"}
+	case protoreflect.EnumKind, protoreflect.StringKind,
+		protoreflect.BytesKind, protoreflect.MessageKind, protoreflect.GroupKind:
+		return nil
+	default:
+		return nil
+	}
+}
+
+func emitEnumSliceFlagVar(g *protogen.GeneratedFile, field *protogen.Field, indent, usage string) {
+	name := fieldToFlagName(string(field.Desc.Name()))
+	varName := "flag_" + string(field.Desc.Name())
+	typeName := string(field.Enum.Desc.Name())
+
+	g.P(indent, "var ", varName, " []int32")
+	g.P(indent, "fs.Var(", cliPkg.Ident("NewEnumSliceValue"), "(&", varName, ", []", cliPkg.Ident("EnumMapping"), "{")
+	emitEnumMappingEntries(g, field.Enum, indent)
+	g.P(indent, "}, ", fmt.Sprintf("%q", typeName), "), ", fmt.Sprintf("%q", name), ", ", fmt.Sprintf("%q", usage), ")")
 }
 
 func emitFsVar(g *protogen.GeneratedFile, indent, constructor, varName, flagName, usage string) {
@@ -592,7 +737,11 @@ func resolveFieldType(field *protogen.Field) *fieldTypeInfo {
 		return &fieldTypeInfo{goType: "float32", constructor: "NewFloat32Value"}
 	case protoreflect.DoubleKind:
 		return &fieldTypeInfo{goType: "float64", stdFlagFunc: "Float64Var", defaultVal: "0"}
-	case protoreflect.EnumKind, protoreflect.BytesKind, protoreflect.MessageKind, protoreflect.GroupKind:
+	case protoreflect.BytesKind:
+		return &fieldTypeInfo{goType: "string", stdFlagFunc: "StringVar", defaultVal: `""`}
+	case protoreflect.MessageKind, protoreflect.GroupKind:
+		return &fieldTypeInfo{goType: "string", stdFlagFunc: "StringVar", defaultVal: `""`}
+	case protoreflect.EnumKind:
 		return nil
 	default:
 		return nil
@@ -660,19 +809,137 @@ func emitRequestFields(
 			continue
 		}
 
-		switch {
-		case field.Desc.Kind() == protoreflect.MessageKind,
-			field.Desc.Kind() == protoreflect.BytesKind,
-			field.Desc.Kind() == protoreflect.GroupKind:
+		// Skip fields that need post-assignment (JSON string fields, bytes)
+		if isPostAssignField(field) {
 			continue
-
-		case field.Desc.Kind() == protoreflect.EnumKind:
-			g.P(indent, field.GoName, ": ", field.Enum.GoIdent, "(", varName, "),")
-
-		default:
-			g.P(indent, field.GoName, ": ", varName, ",")
 		}
+
+		emitFieldAssignment(g, field, varName, indent)
 	}
+}
+
+// emitFieldAssignment emits a single struct literal field assignment,
+// handling enum casts and repeated enum IIFE conversions.
+func emitFieldAssignment(
+	g *protogen.GeneratedFile,
+	field *protogen.Field,
+	varName, indent string,
+) {
+	switch {
+	case field.Desc.IsList() && field.Desc.Kind() == protoreflect.EnumKind:
+		// repeated enum: []int32 → []EnumType conversion via IIFE
+		g.P(indent, field.GoName, ": func() []", field.Enum.GoIdent, " {")
+		g.P(indent, "\tout := make([]", field.Enum.GoIdent, ", len(", varName, "))")
+		g.P(indent, "\tfor i, v := range ", varName, " { out[i] = ", field.Enum.GoIdent, "(v) }")
+		g.P(indent, "\treturn out")
+		g.P(indent, "}(),")
+	case field.Desc.Kind() == protoreflect.EnumKind:
+		g.P(indent, field.GoName, ": ", field.Enum.GoIdent, "(", varName, "),")
+	default:
+		g.P(indent, field.GoName, ": ", varName, ",")
+	}
+}
+
+// isPostAssignField returns true for fields that require post-assignment
+// instead of struct literal inclusion. This includes all JSON string flag
+// fields plus singular bytes (base64-decoded post-assignment).
+func isPostAssignField(field *protogen.Field) bool {
+	if isJSONStringFlag(field) {
+		return true
+	}
+	// Singular bytes → base64 flag (not JSON, but still post-assign)
+	return !field.Desc.IsList() && field.Desc.Kind() == protoreflect.BytesKind
+}
+
+// emitRequestPostAssign emits post-assignment code for JSON string fields,
+// bytes fields, and complex bind_into fields after the struct literal.
+func emitRequestPostAssign(
+	g *protogen.GeneratedFile,
+	msg *protogen.Message,
+	indent string,
+	bindCtxs []bindIntoCtx,
+) {
+	// Handle complex bind_into fields
+	for _, field := range msg.Fields {
+		protoName := string(field.Desc.Name())
+		bc := findBindCtx(bindCtxs, protoName)
+		if bc == nil {
+			continue
+		}
+		if !hasBindIntoComplexFields(bc) {
+			continue
+		}
+		emitBindIntoPostAssign(g, bc, indent)
+	}
+
+	// Handle direct post-assign fields
+	for _, field := range msg.Fields {
+		protoName := string(field.Desc.Name())
+		if findBindCtx(bindCtxs, protoName) != nil {
+			continue
+		}
+		if !isPostAssignField(field) {
+			continue
+		}
+		varName := "flag_" + string(field.Desc.Name())
+		emitPostAssignFieldCode(g, field, varName, "req", indent)
+	}
+}
+
+// emitPostAssignFieldCode emits the post-assignment code for a single
+// complex field: base64 decode for bytes, JSON unmarshal for everything else.
+func emitPostAssignFieldCode(
+	g *protogen.GeneratedFile,
+	field *protogen.Field,
+	varName, targetExpr, indent string,
+) {
+	jsonName := field.Desc.JSONName()
+	if !field.Desc.IsList() && field.Desc.Kind() == protoreflect.BytesKind {
+		g.P(indent, "if ", varName, ` != "" {`)
+		g.P(indent, "\t", varName, "Bytes, err := ", base64Pkg.Ident("StdEncoding"), ".DecodeString(", varName, ")")
+		g.P(indent, "\tif err != nil {")
+		g.P(indent, "\t\treturn err")
+		g.P(indent, "\t}")
+		g.P(indent, "\t", targetExpr, ".", field.GoName, " = ", varName, "Bytes")
+		g.P(indent, "}")
+	} else {
+		g.P(indent, "if ", varName, ` != "" {`)
+		g.P(
+			indent, "\tif err := ",
+			cliPkg.Ident("UnmarshalJSONField"),
+			"(", targetExpr, ", ", fmt.Sprintf("%q", jsonName), ", ", varName,
+			"); err != nil {",
+		)
+		g.P(indent, "\t\treturn err")
+		g.P(indent, "\t}")
+		g.P(indent, "}")
+	}
+}
+
+// emitBindIntoPostAssign emits the post-assignment construction of a
+// bind_into message that has complex fields.
+func emitBindIntoPostAssign(g *protogen.GeneratedFile, bc *bindIntoCtx, indent string) {
+	tmpVar := bc.varPrefix + "Msg"
+	g.P(indent, tmpVar, " := &", bc.msg.GoIdent, "{")
+	for _, field := range bc.msg.Fields {
+		if isPostAssignField(field) {
+			continue
+		}
+		varName := bc.varPrefix + "_" + string(field.Desc.Name())
+		emitFieldAssignment(g, field, varName, indent+"\t")
+	}
+	g.P(indent, "}")
+
+	// Post-assign complex fields
+	for _, field := range bc.msg.Fields {
+		if !isPostAssignField(field) {
+			continue
+		}
+		varName := bc.varPrefix + "_" + string(field.Desc.Name())
+		emitPostAssignFieldCode(g, field, varName, tmpVar, indent)
+	}
+
+	g.P(indent, "req.", bc.goFieldName, " = ", tmpVar)
 }
 
 func findMethod(svc *protogen.Service, goName string) *protogen.Method {
@@ -728,35 +995,52 @@ func findBindCtx(ctxs []bindIntoCtx, fieldName string) *bindIntoCtx {
 	return nil
 }
 
-// isBindIntoSupportedField returns true if the field can be exposed
-// as a group flag. Unsupported: message, bytes, repeated fields.
-func isBindIntoSupportedField(field *protogen.Field) bool {
-	if field.Desc.IsList() {
-		return false
-	}
-	kind := field.Desc.Kind()
-	return kind != protoreflect.MessageKind &&
-		kind != protoreflect.GroupKind &&
-		kind != protoreflect.BytesKind
-}
-
 // emitBindIntoVars emits variable declarations for a bind_into
 // message's fields at function scope.
 func emitBindIntoVars(g *protogen.GeneratedFile, bc bindIntoCtx) {
 	for _, field := range bc.msg.Fields {
-		if !isBindIntoSupportedField(field) {
-			continue
-		}
 		varName := bc.varPrefix + "_" + string(field.Desc.Name())
 		emitVarDecl(g, field, varName, "\t")
 	}
 }
 
 func emitVarDecl(g *protogen.GeneratedFile, field *protogen.Field, varName, indent string) {
+	// Map fields → string for JSON
+	if field.Desc.IsMap() {
+		g.P(indent, "var ", varName, " string")
+		return
+	}
+
+	// Repeated fields
+	if field.Desc.IsList() {
+		switch field.Desc.Kind() {
+		case protoreflect.MessageKind, protoreflect.BytesKind, protoreflect.GroupKind:
+			g.P(indent, "var ", varName, " string")
+		case protoreflect.EnumKind:
+			g.P(indent, "var ", varName, " []int32")
+		case protoreflect.StringKind:
+			g.P(indent, "var ", varName, " []string")
+		case protoreflect.BoolKind,
+			protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind,
+			protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind,
+			protoreflect.Uint32Kind, protoreflect.Fixed32Kind,
+			protoreflect.Uint64Kind, protoreflect.Fixed64Kind,
+			protoreflect.FloatKind, protoreflect.DoubleKind:
+			ri := resolveRepeatedFieldType(field)
+			if ri != nil {
+				g.P(indent, "var ", varName, " ", ri.goType)
+			}
+		}
+		return
+	}
+
+	// Singular enum
 	if field.Desc.Kind() == protoreflect.EnumKind {
 		g.P(indent, "var ", varName, " int32")
 		return
 	}
+
+	// Singular scalar/message/bytes
 	ti := resolveFieldType(field)
 	if ti != nil {
 		g.P(indent, "var ", varName, " ", ti.goType)
@@ -767,9 +1051,6 @@ func emitVarDecl(g *protogen.GeneratedFile, field *protogen.Field, varName, inde
 // for the bind_into message's fields.
 func emitBindIntoFlagRegistration(g *protogen.GeneratedFile, bc *bindIntoCtx, indent string) {
 	for _, field := range bc.msg.Fields {
-		if !isBindIntoSupportedField(field) {
-			continue
-		}
 		varName := bc.varPrefix + "_" + string(field.Desc.Name())
 		flagName := fieldToFlagName(string(field.Desc.Name()))
 		emitBindIntoFlagReg(g, field, varName, flagName, indent)
@@ -782,10 +1063,52 @@ func emitBindIntoFlagReg(
 	varName, flagName, indent string,
 ) {
 	usage := fieldUsage(field)
+	qName := fmt.Sprintf("%q", flagName)
+	qUsage := fmt.Sprintf("%q", usage)
+
+	// Map fields → string flag
+	if field.Desc.IsMap() {
+		g.P(indent, "fs.StringVar(&", varName, ", ", qName, ", ", `""`, ", ", qUsage, ")")
+		return
+	}
+
+	// Repeated fields
+	if field.Desc.IsList() {
+		switch field.Desc.Kind() {
+		case protoreflect.MessageKind, protoreflect.BytesKind, protoreflect.GroupKind:
+			g.P(indent, "fs.StringVar(&", varName, ", ", qName, ", ", `""`, ", ", qUsage, ")")
+		case protoreflect.EnumKind:
+			typeName := string(field.Enum.Desc.Name())
+			g.P(
+				indent, "fs.Var(",
+				cliPkg.Ident("NewEnumSliceValue"),
+				"(&", varName, ", []", cliPkg.Ident("EnumMapping"), "{",
+			)
+			emitEnumMappingEntries(g, field.Enum, indent)
+			g.P(indent, "}, ", fmt.Sprintf("%q", typeName), "), ", qName, ", ", qUsage, ")")
+		case protoreflect.StringKind:
+			emitFsVar(g, indent, "NewStringSliceValue", varName, flagName, usage)
+		case protoreflect.BoolKind,
+			protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind,
+			protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind,
+			protoreflect.Uint32Kind, protoreflect.Fixed32Kind,
+			protoreflect.Uint64Kind, protoreflect.Fixed64Kind,
+			protoreflect.FloatKind, protoreflect.DoubleKind:
+			ri := resolveRepeatedFieldType(field)
+			if ri != nil {
+				emitFsVar(g, indent, ri.constructor, varName, flagName, usage)
+			}
+		}
+		return
+	}
+
+	// Singular enum
 	if field.Desc.Kind() == protoreflect.EnumKind {
 		emitEnumFlagReg(g, field, varName, flagName, indent, usage)
 		return
 	}
+
+	// Singular scalar/message/bytes
 	ti := resolveFieldType(field)
 	if ti != nil {
 		emitFlagReg(g, indent, ti, varName, flagName, usage)
@@ -815,20 +1138,28 @@ func emitEnumFlagReg(
 	)
 }
 
+// hasBindIntoComplexFields returns true if the bind_into message contains
+// any fields requiring post-assignment (JSON string, bytes, map).
+func hasBindIntoComplexFields(bc *bindIntoCtx) bool {
+	return slices.ContainsFunc(bc.msg.Fields, isPostAssignField)
+}
+
 // emitBindIntoFieldConstruction emits the bind_into message field
 // construction in the request struct literal.
+// If the bind_into message has complex fields, it emits only the field name
+// as a placeholder (the actual construction is in emitRequestPostAssign).
 func emitBindIntoFieldConstruction(g *protogen.GeneratedFile, bc *bindIntoCtx, indent string) {
+	if hasBindIntoComplexFields(bc) {
+		// Complex bind_into: build separately and assign post struct literal.
+		// Emit nothing in the struct literal — it will be assigned via post-assign.
+		return
+	}
+
+	// Simple bind_into: inline struct literal
 	g.P(indent, bc.goFieldName, ": &", bc.msg.GoIdent, "{")
 	for _, field := range bc.msg.Fields {
-		if !isBindIntoSupportedField(field) {
-			continue
-		}
 		varName := bc.varPrefix + "_" + string(field.Desc.Name())
-		if field.Desc.Kind() == protoreflect.EnumKind {
-			g.P(indent, "\t", field.GoName, ": ", field.Enum.GoIdent, "(", varName, "),")
-		} else {
-			g.P(indent, "\t", field.GoName, ": ", varName, ",")
-		}
+		emitFieldAssignment(g, field, varName, indent+"\t")
 	}
 	g.P(indent, "},")
 }
@@ -950,33 +1281,54 @@ func emitSchemaFields(
 ) {
 	g.P(indent, fieldName, ": []", cliPkg.Ident("SchemaField"), "{")
 	for _, field := range msg.Fields {
-		g.P(indent, "\t{")
-		g.P(indent, "\t\tName: ", fmt.Sprintf("%q", string(field.Desc.Name())), ",")
-		g.P(indent, "\t\tType: ", fmt.Sprintf("%q", schemaFieldType(field)), ",")
-		if desc := getFieldDescription(field); desc != "" {
-			g.P(indent, "\t\tDescription: ", fmt.Sprintf("%q", desc), ",")
-		}
-		if field.Desc.IsList() {
-			g.P(indent, "\t\tRepeated: true,")
-		}
-		if field.Desc.Kind() == protoreflect.EnumKind {
-			values := enumCLIValuesForSchema(field.Enum)
-			if len(values) > 0 {
-				g.P(indent, "\t\tEnumValues: []string{")
-				for _, v := range values {
-					g.P(indent, "\t\t\t", fmt.Sprintf("%q", v), ",")
-				}
-				g.P(indent, "\t\t},")
-			}
-		}
-		g.P(indent, "\t},")
+		emitSchemaFieldEntry(g, field, indent)
 	}
 	g.P(indent, "},")
 }
 
+func emitSchemaFieldEntry(
+	g *protogen.GeneratedFile,
+	field *protogen.Field,
+	indent string,
+) {
+	g.P(indent, "\t{")
+	g.P(indent, "\t\tName: ", fmt.Sprintf("%q", string(field.Desc.Name())), ",")
+	g.P(indent, "\t\tType: ", fmt.Sprintf("%q", schemaFieldType(field)), ",")
+	if desc := getFieldDescription(field); desc != "" {
+		g.P(indent, "\t\tDescription: ", fmt.Sprintf("%q", desc), ",")
+	}
+	if field.Desc.IsList() {
+		g.P(indent, "\t\tRepeated: true,")
+	}
+	if field.Desc.IsMap() {
+		g.P(indent, "\t\tMap: true,")
+	}
+	if field.Desc.Kind() == protoreflect.EnumKind {
+		values := enumCLIValuesForSchema(field.Enum)
+		if len(values) > 0 {
+			g.P(indent, "\t\tEnumValues: []string{")
+			for _, v := range values {
+				g.P(indent, "\t\t\t", fmt.Sprintf("%q", v), ",")
+			}
+			g.P(indent, "\t\t},")
+		}
+	}
+	g.P(indent, "\t},")
+}
+
 // schemaFieldType returns the type string for a schema field.
 func schemaFieldType(field *protogen.Field) string {
-	switch field.Desc.Kind() {
+	if field.Desc.IsMap() {
+		keyType := schemaKindString(field.Desc.MapKey().Kind())
+		valType := schemaKindString(field.Desc.MapValue().Kind())
+		return "map<" + keyType + "," + valType + ">"
+	}
+	return schemaKindString(field.Desc.Kind())
+}
+
+// schemaKindString maps a protoreflect.Kind to a string for schema display.
+func schemaKindString(kind protoreflect.Kind) string {
+	switch kind {
 	case protoreflect.StringKind:
 		return "string"
 	case protoreflect.BoolKind:

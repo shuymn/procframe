@@ -720,6 +720,93 @@ func TestIntegration_HelpShowsFieldDescriptions(t *testing.T) {
 	}
 }
 
+func TestIntegration_PRServiceBindIntoLabels(t *testing.T) {
+	t.Parallel()
+
+	h := &prHandler{}
+	runner := testv1.NewPRServiceCLIRunner(
+		h,
+		cli.WithStdout(&bytes.Buffer{}),
+		cli.WithStderr(&bytes.Buffer{}),
+	)
+
+	err := runner.Run(t.Context(), []string{
+		"repo", "pr", "--state", "open", "--labels", "bug", "--labels", "urgent",
+		"list", "--limit", "5",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if h.lastReq == nil || h.lastReq.Pr == nil {
+		t.Fatal("want Pr field injected, got nil")
+	}
+	if len(h.lastReq.Pr.Labels) != 2 || h.lastReq.Pr.Labels[0] != "bug" || h.lastReq.Pr.Labels[1] != "urgent" {
+		t.Fatalf("want labels=[bug urgent], got %v", h.lastReq.Pr.Labels)
+	}
+}
+
+func TestIntegration_PRServiceBindIntoPrimaryLabel(t *testing.T) {
+	t.Parallel()
+
+	h := &prHandler{}
+	runner := testv1.NewPRServiceCLIRunner(
+		h,
+		cli.WithStdout(&bytes.Buffer{}),
+		cli.WithStderr(&bytes.Buffer{}),
+	)
+
+	err := runner.Run(t.Context(), []string{
+		"repo", "pr", "--primary-label", `{"name":"critical"}`,
+		"list",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if h.lastReq == nil || h.lastReq.Pr == nil {
+		t.Fatal("want Pr field injected, got nil")
+	}
+	if h.lastReq.Pr.PrimaryLabel == nil {
+		t.Fatal("want PrimaryLabel set, got nil")
+	}
+	if h.lastReq.Pr.PrimaryLabel.Name != "critical" {
+		t.Fatalf("want name=critical, got %q", h.lastReq.Pr.PrimaryLabel.Name)
+	}
+}
+
+func TestIntegration_MessageFieldJSONFlag(t *testing.T) {
+	t.Parallel()
+
+	h := &prHandler{}
+	var stdout bytes.Buffer
+	runner := testv1.NewPRServiceCLIRunner(
+		h,
+		cli.WithStdout(&stdout),
+		cli.WithStderr(&bytes.Buffer{}),
+	)
+
+	err := runner.Run(t.Context(), []string{
+		"repo", "pr", "list", "--repo", `{"org":"myorg"}`, "--limit", "3",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if h.lastReq == nil {
+		t.Fatal("handler was not called")
+	}
+	if h.lastReq.Repo == nil {
+		t.Fatal("want Repo set via JSON flag, got nil")
+	}
+	if h.lastReq.Repo.Org != "myorg" {
+		t.Fatalf("want org=myorg, got %q", h.lastReq.Repo.Org)
+	}
+	if h.lastReq.Limit != 3 {
+		t.Fatalf("want limit=3, got %d", h.lastReq.Limit)
+	}
+}
+
 func TestIntegration_HelpShowsEnumValues(t *testing.T) {
 	t.Parallel()
 
