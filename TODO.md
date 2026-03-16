@@ -18,13 +18,40 @@
 - Question: WS frame の正式 schema
   - Class: `risk-bearing`
   - Resolution: `decision`
-  - Status: `deferred`
-  - Reason: WS は v0.1 スコープ外
+  - Status: `resolved`
   - Decision: IDEA.md §17.1 ドラフト採用 + error frame に `retryable` 追加
     - inbound: `{"id":"...","procedure":"/pkg.Service/Method","payload":{...}}`
     - outbound success: `{"id":"...","payload":{...},"eos":true|false}`
     - outbound error: `{"id":"...","error":{"code":"...","message":"...","retryable":false},"eos":true}`
     - `error` と `payload` は排他。`error` 時は常に `eos: true`
+  - Design decisions:
+    - JSON text frames (protojson 一貫性、デバッグ容易)。バイナリは将来 subprotocol ネゴで追加可能
+    - payload は `json.RawMessage` として受け取り、dispatch 先でプロトコル固有の型にアンマーシャル
+    - リクエストレベルエラー: インバンドのエラーフレーム。コネクションレベルエラー: WS close code (1000/1008/1011/4000/4001)
+
+- Question: WS frame ID の生成責務
+  - Class: `risk-bearing`
+  - Resolution: `decision`
+  - Status: `resolved`
+  - Decision: クライアント生成。サーバーは ID をそのままレスポンスに反映する。ID 衝突時の挙動は未定義（クライアント責務）。
+
+- Question: WS グレースフルシャットダウンのシーケンス
+  - Class: `risk-bearing`
+  - Resolution: `decision`
+  - Status: `resolved`
+  - Decision: 初期実装は基本 close のみ（`conn.CloseNow()`）。drain-with-deadline は将来の拡張。context cancel により handler は停止する。
+
+- Question: WS バックプレッシャー制御
+  - Class: `risk-bearing`
+  - Resolution: `decision`
+  - Status: `resolved`
+  - Decision: write channel のバッファサイズ (default 64) + semaphore による max-inflight 制御 (default 64)。超過時は CodeUnavailable + retryable=true で即時拒否。
+
+- Question: WsOptions の将来拡張
+  - Class: `non-risk-bearing`
+  - Resolution: `decision`
+  - Status: `deferred`
+  - Reason: 現状は `enabled` のみで十分
 
 ## Themes
 
@@ -46,6 +73,47 @@
   - Executable doc: TestIntegration_ConnectUnarySuccess, TestIntegration_ConnectUnaryError, TestIntegration_ConnectServerStreaming, TestIntegration_ConnectOptOut
   - Why not split vertically further?: runtime パッケージと codegen は同時に機能して初めて外部観測可能な前進になる。proto option, runtime, codegen は単一の handler 呼び出しパスを構成し、いずれか単体では Connect RPC が成立しない。
   - Escalate if: connect-go の generic handler API が procframe の handler function signature と型制約の間で型安全なアダプタを作れない場合
+
+- [x] Theme: WS Transport Spike
+  - Outcome: `github.com/coder/websocket` を使った WS transport の feasibility が実証される
+  - Goal: 4 つの spike テストで基本フレーム往復、protojson payload ラウンドトリップ、並行 write 直列化、切断時 context キャンセル伝播を検証
+  - Must Not Break: 既存テスト、go.mod の既存依存
+  - Non-goals: WS transport のランタイム実装、codegen、production API
+  - Acceptance (EARS):
+    - When a JSON text frame is sent over a WS connection, the server shall parse the envelope and echo the payload back
+    - When a proto message is marshalled with protojson and embedded as json.RawMessage in a JSON envelope, round-trip shall preserve all fields
+    - When 3 goroutines concurrently send frames through a write channel, the WS connection shall receive all frames without race detector warnings
+    - When a client closes a WS connection, the server-side context shall be cancelled within 1 second
+    - When a WS frame arrives with a registered procedure, the server shall dispatch to the procframe unary handler and return the serialized response
+    - When a server-stream handler sends multiple responses, the server shall emit frames with eos=false followed by a final eos=true frame
+    - When a handler returns a StatusError, the server shall construct an error frame with the correct code, message, and retryable flag
+    - When multiple requests arrive on a single connection with different IDs, the server shall dispatch them concurrently and correlate responses by ID
+    - When the inflight request count exceeds max-inflight, the server shall reject with CodeUnavailable and retryable=true
+  - Evidence: `run=go test -race -count=1 ./transport/ws/...; oracle=全 spike テスト pass、race detector 警告なし; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
+  - Gates: `spike`
+
+- [x] Theme: WS Transport Runtime + Codegen
+  - Outcome: proto 定義から生成されたサービスが WebSocket 経由で Unary / Server Streaming RPC を処理できる
+  - Goal: transport/ws ランタイムパッケージ実装、codegen による New{Service}WSHandler 生成
+  - Must Not Break: 既存 handler interface の signature, CLI/Connect transport の動作, codegen の既存出力, error code 体系, proto option の後方互換性
+  - Non-goals: WS クライアント実装, バイナリフレーム, interceptor/middleware, ping/pong heartbeat, compression, reconnection, Shutdown の drain-with-deadline (基本 close のみ)
+  - Acceptance (EARS):
+    - When a method has ws.enabled = true, the codegen shall register it in New{Service}WSHandler
+    - When a method has ws.enabled = false (default), the codegen shall exclude it
+    - When no methods have ws.enabled = true, the codegen shall not produce a WS handler and not import transport/ws
+    - When a WS client sends an inbound frame for a registered unary procedure, the Server shall return the response as an outbound frame with eos=true
+    - When a WS client sends an inbound frame for a server-streaming procedure, the Server shall emit data frames (eos=false) followed by a final eos=true
+    - When a handler returns a StatusError, the outbound frame shall carry error with correct code, message, retryable
+    - When WithErrorMapper is configured, non-StatusError shall be classified before error frame construction
+    - When multiple requests arrive with different IDs, the Server shall dispatch concurrently and correlate by ID
+    - When inflight exceeds max-inflight, the Server shall reject with CodeUnavailable + retryable=true
+    - When a client sends an unknown procedure, the Server shall respond with CodeNotFound error frame
+    - When a client disconnects, the server-side context shall be cancelled
+  - Evidence: `run=task check; oracle=generated WS handler serves unary/streaming, error codes map correctly, opt-out excluded, multiplex+inflight work; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
+  - Gates: `static`, `integration`
+  - Executable doc: TestIntegration_WSUnarySuccess, TestIntegration_WSUnaryError, TestIntegration_WSServerStreaming, TestIntegration_WSOptOut, TestIntegration_WSMultiplexed, TestIntegration_WSMaxInflight, TestIntegration_WSDisconnect
+  - Why not split vertically further?: runtime と codegen は同時に機能して初めて WS RPC が成立する (Connect Theme と同じ理由)
+  - Escalate if: proto.Message 型制約と procframe の any 型パラメータの間で型安全なアダプタが作れない場合
 
 - [x] Theme: Help/Schema メタデータ伝播
   - Outcome: CLI の help と schema 出力が proto 定義のメタデータを表示する
