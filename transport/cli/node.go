@@ -22,6 +22,10 @@ type Node struct {
 	// May be nil for nodes without group flags.
 	FlagSet *flag.FlagSet
 
+	// HelpFlags returns a FlagSet describing the leaf command's flags
+	// for display in help output. May be nil. Not used for parsing.
+	HelpFlags func() *flag.FlagSet
+
 	// Children maps subcommand names to child nodes.
 	// Non-nil for group nodes.
 	Children map[string]*Node

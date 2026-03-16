@@ -12,8 +12,9 @@ type CommandInfo struct {
 
 // SchemaField describes a single field within a message.
 type SchemaField struct {
-	Name       string   `json:"name"`
-	Type       string   `json:"type"`
-	Repeated   bool     `json:"repeated,omitempty"`
-	EnumValues []string `json:"enum_values,omitempty"`
+	Name        string   `json:"name"`
+	Type        string   `json:"type"`
+	Description string   `json:"description,omitempty"`
+	Repeated    bool     `json:"repeated,omitempty"`
+	EnumValues  []string `json:"enum_values,omitempty"`
 }

@@ -194,7 +194,11 @@ func (r *Runner) dispatch(ctx context.Context, node *Node, args, path []string) 
 
 	remaining := args[1:]
 	if len(remaining) > 0 && (remaining[0] == "--help" || remaining[0] == "-h") {
-		WriteCommandHelp(r.stderr, child, childPath, nil)
+		var fs *flag.FlagSet
+		if child.HelpFlags != nil {
+			fs = child.HelpFlags()
+		}
+		WriteCommandHelp(r.stderr, child, childPath, fs)
 		return nil
 	}
 
