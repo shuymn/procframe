@@ -51,10 +51,20 @@ func HandleUnary[Req, Res any](
 			writeFn(toErrorFrame(id, err, s.opts.errorMapper))
 			return
 		}
-		resp, err := h(ctx, &procframe.Request[Req]{
-			Msg:  req,
-			Meta: procframe.Meta{Procedure: procedure, RequestID: id},
-		})
+		resp, err := procframe.InvokeUnary(
+			ctx,
+			procframe.CallSpec{
+				Procedure:  procedure,
+				Transport:  procframe.TransportWS,
+				StreamType: procframe.StreamTypeUnary,
+			},
+			&procframe.Request[Req]{
+				Msg:  req,
+				Meta: procframe.Meta{Procedure: procedure, RequestID: id},
+			},
+			h,
+			s.opts.interceptors...,
+		)
 		if err != nil {
 			writeFn(toErrorFrame(id, err, s.opts.errorMapper))
 			return
@@ -99,10 +109,21 @@ func HandleServerStream[Req, Res any](
 			id:      id,
 			writeFn: writeFn,
 		}
-		err = h(ctx, &procframe.Request[Req]{
-			Msg:  req,
-			Meta: procframe.Meta{Procedure: procedure, RequestID: id},
-		}, stream)
+		err = procframe.InvokeServerStream(
+			ctx,
+			procframe.CallSpec{
+				Procedure:  procedure,
+				Transport:  procframe.TransportWS,
+				StreamType: procframe.StreamTypeServerStream,
+			},
+			&procframe.Request[Req]{
+				Msg:  req,
+				Meta: procframe.Meta{Procedure: procedure, RequestID: id},
+			},
+			stream,
+			h,
+			s.opts.interceptors...,
+		)
 		if err != nil {
 			writeFn(toErrorFrame(id, err, s.opts.errorMapper))
 			return

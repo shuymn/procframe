@@ -167,10 +167,10 @@ func NewTickServiceCLIRunner(h TickServiceHandler, opts ...cli.Option) *cli.Runn
 				fmt.Fprintln(stdout, string(out))
 				return nil
 			})
-			return h.Watch(ctx, &procframe.Request[TickRequest]{
+			return procframe.InvokeServerStream(ctx, procframe.CallSpec{Procedure: "/test.v1.TickService/Watch", Transport: procframe.TransportCLI, StreamType: procframe.StreamTypeServerStream}, &procframe.Request[TickRequest]{
 				Msg:  req,
 				Meta: procframe.Meta{Procedure: "/test.v1.TickService/Watch"},
-			}, stream)
+			}, stream, h.Watch, cli.InterceptorsFromContext(ctx)...)
 		},
 		HelpFlags: func() *flag.FlagSet {
 			fs := flag.NewFlagSet("", flag.ContinueOnError)

@@ -6,8 +6,9 @@ import "github.com/shuymn/procframe"
 type Option func(*options)
 
 type options struct {
-	errorMapper procframe.ErrorMapper
-	maxInflight int
+	errorMapper  procframe.ErrorMapper
+	maxInflight  int
+	interceptors []procframe.Interceptor
 }
 
 func defaultOptions() options {
@@ -20,6 +21,13 @@ func defaultOptions() options {
 // that are not already wrapped as [procframe.StatusError].
 func WithErrorMapper(mapper procframe.ErrorMapper) Option {
 	return func(o *options) { o.errorMapper = mapper }
+}
+
+// WithInterceptors sets the interceptor chain applied to handler execution.
+func WithInterceptors(interceptors ...procframe.Interceptor) Option {
+	return func(o *options) {
+		o.interceptors = append([]procframe.Interceptor(nil), interceptors...)
+	}
 }
 
 // WithMaxInflight sets the maximum number of concurrently executing

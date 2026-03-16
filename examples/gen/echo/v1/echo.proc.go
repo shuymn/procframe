@@ -110,10 +110,10 @@ func NewEchoServiceCLIRunner(h EchoServiceHandler, opts ...cli.Option) *cli.Runn
 					Message: flag_message,
 				}
 			}
-			resp, err := h.Echo(ctx, &procframe.Request[EchoRequest]{
+			resp, err := procframe.InvokeUnary(ctx, procframe.CallSpec{Procedure: "/echo.v1.EchoService/Echo", Transport: procframe.TransportCLI, StreamType: procframe.StreamTypeUnary}, &procframe.Request[EchoRequest]{
 				Msg:  req,
 				Meta: procframe.Meta{Procedure: "/echo.v1.EchoService/Echo"},
-			})
+			}, h.Echo, cli.InterceptorsFromContext(ctx)...)
 			if err != nil {
 				return err
 			}

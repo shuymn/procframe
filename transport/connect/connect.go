@@ -15,13 +15,21 @@ import (
 type Option func(*options)
 
 type options struct {
-	errorMapper procframe.ErrorMapper
+	errorMapper  procframe.ErrorMapper
+	interceptors []procframe.Interceptor
 }
 
 // WithErrorMapper sets the boundary mapper used to classify errors
 // that are not already wrapped as [procframe.StatusError].
 func WithErrorMapper(mapper procframe.ErrorMapper) Option {
 	return func(o *options) { o.errorMapper = mapper }
+}
+
+// WithInterceptors sets the interceptor chain applied to handler execution.
+func WithInterceptors(interceptors ...procframe.Interceptor) Option {
+	return func(o *options) {
+		o.interceptors = append([]procframe.Interceptor(nil), interceptors...)
+	}
 }
 
 func buildOptions(opts []Option) *options {
@@ -48,7 +56,17 @@ func NewUnaryHandler[Req, Res any](
 				Msg:  req.Msg,
 				Meta: procframe.Meta{Procedure: procedure},
 			}
-			pResp, err := handler(ctx, pReq)
+			pResp, err := procframe.InvokeUnary(
+				ctx,
+				procframe.CallSpec{
+					Procedure:  procedure,
+					Transport:  procframe.TransportConnect,
+					StreamType: procframe.StreamTypeUnary,
+				},
+				pReq,
+				handler,
+				o.interceptors...,
+			)
 			if err != nil {
 				return nil, toConnectError(err, o.errorMapper)
 			}
@@ -76,7 +94,18 @@ func NewServerStreamHandler[Req, Res any](
 				Meta: procframe.Meta{Procedure: procedure},
 			}
 			adapter := &serverStream[Res]{getCtx: func() context.Context { return ctx }, stream: stream}
-			if err := handler(ctx, pReq, adapter); err != nil {
+			if err := procframe.InvokeServerStream(
+				ctx,
+				procframe.CallSpec{
+					Procedure:  procedure,
+					Transport:  procframe.TransportConnect,
+					StreamType: procframe.StreamTypeServerStream,
+				},
+				pReq,
+				adapter,
+				handler,
+				o.interceptors...,
+			); err != nil {
 				return toConnectError(err, o.errorMapper)
 			}
 			return nil

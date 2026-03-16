@@ -397,9 +397,18 @@ func emitRequestParsing(
 // within a leaf command's Run function.
 func emitHandlerCall(g *protogen.GeneratedFile, method *protogen.Method, leaf *leafInfo) {
 	g.P(
-		"\t\t\tresp, err := h.",
-		method.GoName,
-		"(ctx, &",
+		"\t\t\tresp, err := ",
+		procframePkg.Ident("InvokeUnary"),
+		"(ctx, ",
+		procframePkg.Ident("CallSpec"),
+		"{",
+		"Procedure: ",
+		fmt.Sprintf("%q", leaf.FullName),
+		", Transport: ",
+		procframePkg.Ident("TransportCLI"),
+		", StreamType: ",
+		procframePkg.Ident("StreamTypeUnary"),
+		"}, &",
 		procframePkg.Ident("Request"),
 		"[",
 		method.Input.GoIdent,
@@ -407,7 +416,7 @@ func emitHandlerCall(g *protogen.GeneratedFile, method *protogen.Method, leaf *l
 	)
 	g.P("\t\t\t\tMsg:  req,")
 	g.P("\t\t\t\tMeta: ", procframePkg.Ident("Meta"), "{Procedure: ", fmt.Sprintf("%q", leaf.FullName), "},")
-	g.P("\t\t\t})")
+	g.P("\t\t\t}, h.", method.GoName, ", ", cliPkg.Ident("InterceptorsFromContext"), "(ctx)...)")
 	g.P("\t\t\tif err != nil {")
 	g.P("\t\t\t\treturn err")
 	g.P("\t\t\t}")
@@ -471,9 +480,18 @@ func emitStreamingHandlerCall(g *protogen.GeneratedFile, method *protogen.Method
 
 	// Invoke streaming handler
 	g.P(
-		"\t\t\treturn h.",
-		method.GoName,
-		"(ctx, &",
+		"\t\t\treturn ",
+		procframePkg.Ident("InvokeServerStream"),
+		"(ctx, ",
+		procframePkg.Ident("CallSpec"),
+		"{",
+		"Procedure: ",
+		fmt.Sprintf("%q", leaf.FullName),
+		", Transport: ",
+		procframePkg.Ident("TransportCLI"),
+		", StreamType: ",
+		procframePkg.Ident("StreamTypeServerStream"),
+		"}, &",
 		procframePkg.Ident("Request"),
 		"[",
 		method.Input.GoIdent,
@@ -481,7 +499,7 @@ func emitStreamingHandlerCall(g *protogen.GeneratedFile, method *protogen.Method
 	)
 	g.P("\t\t\t\tMsg:  req,")
 	g.P("\t\t\t\tMeta: ", procframePkg.Ident("Meta"), "{Procedure: ", fmt.Sprintf("%q", leaf.FullName), "},")
-	g.P("\t\t\t}, stream)")
+	g.P("\t\t\t}, stream, h.", method.GoName, ", ", cliPkg.Ident("InterceptorsFromContext"), "(ctx)...)")
 }
 
 func emitFlagVars(g *protogen.GeneratedFile, msg *protogen.Message, indent string) {

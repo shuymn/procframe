@@ -227,10 +227,10 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 					Target: flag_target,
 				}
 			}
-			resp, err := h.DefaultEnabled(ctx, &procframe.Request[PingRequest]{
+			resp, err := procframe.InvokeUnary(ctx, procframe.CallSpec{Procedure: "/test.v1.CliOptionsTestService/DefaultEnabled", Transport: procframe.TransportCLI, StreamType: procframe.StreamTypeUnary}, &procframe.Request[PingRequest]{
 				Msg:  req,
 				Meta: procframe.Meta{Procedure: "/test.v1.CliOptionsTestService/DefaultEnabled"},
-			})
+			}, h.DefaultEnabled, cli.InterceptorsFromContext(ctx)...)
 			if err != nil {
 				return err
 			}
@@ -280,10 +280,10 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 					Target: flag_target,
 				}
 			}
-			resp, err := h.ExplicitEnabled(ctx, &procframe.Request[PingRequest]{
+			resp, err := procframe.InvokeUnary(ctx, procframe.CallSpec{Procedure: "/test.v1.CliOptionsTestService/ExplicitEnabled", Transport: procframe.TransportCLI, StreamType: procframe.StreamTypeUnary}, &procframe.Request[PingRequest]{
 				Msg:  req,
 				Meta: procframe.Meta{Procedure: "/test.v1.CliOptionsTestService/ExplicitEnabled"},
-			})
+			}, h.ExplicitEnabled, cli.InterceptorsFromContext(ctx)...)
 			if err != nil {
 				return err
 			}
@@ -333,10 +333,10 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 					Target: flag_target,
 				}
 			}
-			resp, err := h.WsEnabled(ctx, &procframe.Request[PingRequest]{
+			resp, err := procframe.InvokeUnary(ctx, procframe.CallSpec{Procedure: "/test.v1.CliOptionsTestService/WsEnabled", Transport: procframe.TransportCLI, StreamType: procframe.StreamTypeUnary}, &procframe.Request[PingRequest]{
 				Msg:  req,
 				Meta: procframe.Meta{Procedure: "/test.v1.CliOptionsTestService/WsEnabled"},
-			})
+			}, h.WsEnabled, cli.InterceptorsFromContext(ctx)...)
 			if err != nil {
 				return err
 			}

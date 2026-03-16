@@ -164,10 +164,10 @@ func NewEchoServiceCLIRunner(h EchoServiceHandler, opts ...cli.Option) *cli.Runn
 					Uppercase: flag_uppercase,
 				}
 			}
-			resp, err := h.Echo(ctx, &procframe.Request[EchoRequest]{
+			resp, err := procframe.InvokeUnary(ctx, procframe.CallSpec{Procedure: "/test.v1.EchoService/Echo", Transport: procframe.TransportCLI, StreamType: procframe.StreamTypeUnary}, &procframe.Request[EchoRequest]{
 				Msg:  req,
 				Meta: procframe.Meta{Procedure: "/test.v1.EchoService/Echo"},
-			})
+			}, h.Echo, cli.InterceptorsFromContext(ctx)...)
 			if err != nil {
 				return err
 			}

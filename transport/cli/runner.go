@@ -15,11 +15,12 @@ import (
 
 // Runner holds a CLI command tree and dispatches execution.
 type Runner struct {
-	root        *Node
-	name        string
-	stdout      io.Writer
-	stderr      io.Writer
-	errorMapper procframe.ErrorMapper
+	root         *Node
+	name         string
+	stdout       io.Writer
+	stderr       io.Writer
+	errorMapper  procframe.ErrorMapper
+	interceptors []procframe.Interceptor
 }
 
 // Option configures a [Runner].
@@ -45,6 +46,13 @@ func WithErrorMapper(mapper procframe.ErrorMapper) Option {
 	return func(r *Runner) { r.errorMapper = mapper }
 }
 
+// WithInterceptors sets the interceptor chain applied to generated handler calls.
+func WithInterceptors(interceptors ...procframe.Interceptor) Option {
+	return func(r *Runner) {
+		r.interceptors = append([]procframe.Interceptor(nil), interceptors...)
+	}
+}
+
 // NewRunner constructs a [Runner] from a root group node.
 func NewRunner(root *Node, opts ...Option) *Runner {
 	r := &Runner{
@@ -68,6 +76,7 @@ func (r *Runner) Stderr() io.Writer { return r.stderr }
 // Run parses args, traverses the command tree, and executes the
 // matched leaf command. Returns nil on success or help display.
 func (r *Runner) Run(ctx context.Context, args []string) error {
+	ctx = withInterceptors(ctx, r.interceptors)
 	remaining, gf, err := preParseGlobalFlags(args)
 	if err != nil {
 		return err
@@ -93,6 +102,26 @@ func (r *Runner) Run(ctx context.Context, args []string) error {
 		return mappedErr
 	}
 	return nil
+}
+
+type interceptorsKey struct{}
+
+func withInterceptors(ctx context.Context, interceptors []procframe.Interceptor) context.Context {
+	return context.WithValue(
+		ctx,
+		interceptorsKey{},
+		append([]procframe.Interceptor(nil), interceptors...),
+	)
+}
+
+// InterceptorsFromContext returns the runner interceptor chain, if any.
+func InterceptorsFromContext(ctx context.Context) []procframe.Interceptor {
+	val := ctx.Value(interceptorsKey{})
+	interceptors, ok := val.([]procframe.Interceptor)
+	if !ok {
+		return nil
+	}
+	return append([]procframe.Interceptor(nil), interceptors...)
 }
 
 func (r *Runner) mapError(err error) (procframe.Status, bool, error) {
