@@ -13,7 +13,6 @@ import (
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
 	http "net/http"
-	sort "sort"
 	strings "strings"
 )
 
@@ -35,6 +34,168 @@ type CliOptionsTestServiceHandler interface {
 		context.Context,
 		*procframe.Request[PingRequest],
 	) (*procframe.Response[PingResponse], error)
+}
+
+var schemaDataCliOptionsTestServiceByCommand = map[string]cli.CommandInfo{
+	"cliopts default-enabled": {
+		Command:   "cliopts default-enabled",
+		Summary:   "Default CLI enabled",
+		Procedure: "/test.v1.CliOptionsTestService/DefaultEnabled",
+		Flags: []cli.SchemaField{
+			{
+				Name: "target",
+				Type: "string",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "result",
+				Type: "string",
+			},
+		},
+	},
+	"cliopts explicit-enabled": {
+		Command:   "cliopts explicit-enabled",
+		Summary:   "Explicitly CLI enabled",
+		Procedure: "/test.v1.CliOptionsTestService/ExplicitEnabled",
+		Flags: []cli.SchemaField{
+			{
+				Name: "target",
+				Type: "string",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "result",
+				Type: "string",
+			},
+		},
+	},
+	"cliopts ws-enabled": {
+		Command:   "cliopts ws-enabled",
+		Summary:   "WS enabled, CLI default",
+		Procedure: "/test.v1.CliOptionsTestService/WsEnabled",
+		Flags: []cli.SchemaField{
+			{
+				Name: "target",
+				Type: "string",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "result",
+				Type: "string",
+			},
+		},
+	},
+}
+
+var schemaDataCliOptionsTestServiceByProcedure = map[string]cli.CommandInfo{
+	"/test.v1.CliOptionsTestService/DefaultEnabled": {
+		Command:   "cliopts default-enabled",
+		Summary:   "Default CLI enabled",
+		Procedure: "/test.v1.CliOptionsTestService/DefaultEnabled",
+		Flags: []cli.SchemaField{
+			{
+				Name: "target",
+				Type: "string",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "result",
+				Type: "string",
+			},
+		},
+	},
+	"/test.v1.CliOptionsTestService/ExplicitEnabled": {
+		Command:   "cliopts explicit-enabled",
+		Summary:   "Explicitly CLI enabled",
+		Procedure: "/test.v1.CliOptionsTestService/ExplicitEnabled",
+		Flags: []cli.SchemaField{
+			{
+				Name: "target",
+				Type: "string",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "result",
+				Type: "string",
+			},
+		},
+	},
+	"/test.v1.CliOptionsTestService/WsEnabled": {
+		Command:   "cliopts ws-enabled",
+		Summary:   "WS enabled, CLI default",
+		Procedure: "/test.v1.CliOptionsTestService/WsEnabled",
+		Flags: []cli.SchemaField{
+			{
+				Name: "target",
+				Type: "string",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "result",
+				Type: "string",
+			},
+		},
+	},
+}
+
+var schemaDataCliOptionsTestServiceAll = []cli.CommandInfo{
+	{
+		Command:   "cliopts default-enabled",
+		Summary:   "Default CLI enabled",
+		Procedure: "/test.v1.CliOptionsTestService/DefaultEnabled",
+		Flags: []cli.SchemaField{
+			{
+				Name: "target",
+				Type: "string",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "result",
+				Type: "string",
+			},
+		},
+	},
+	{
+		Command:   "cliopts explicit-enabled",
+		Summary:   "Explicitly CLI enabled",
+		Procedure: "/test.v1.CliOptionsTestService/ExplicitEnabled",
+		Flags: []cli.SchemaField{
+			{
+				Name: "target",
+				Type: "string",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "result",
+				Type: "string",
+			},
+		},
+	},
+	{
+		Command:   "cliopts ws-enabled",
+		Summary:   "WS enabled, CLI default",
+		Procedure: "/test.v1.CliOptionsTestService/WsEnabled",
+		Flags: []cli.SchemaField{
+			{
+				Name: "target",
+				Type: "string",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "result",
+				Type: "string",
+			},
+		},
+	},
 }
 
 // NewCliOptionsTestServiceCLIRunner constructs a [cli.Runner]
@@ -217,70 +378,11 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 		Segment: "schema",
 		Summary: "Show procedure schemas",
 		Run: func(_ context.Context, args []string, stdout io.Writer) error {
-			schemas := map[string]cli.CommandInfo{
-				"cliopts default-enabled": {
-					Command:   "cliopts default-enabled",
-					Summary:   "Default CLI enabled",
-					Procedure: "/test.v1.CliOptionsTestService/DefaultEnabled",
-					Flags: []cli.SchemaField{
-						{
-							Name: "target",
-							Type: "string",
-						},
-					},
-					Output: []cli.SchemaField{
-						{
-							Name: "result",
-							Type: "string",
-						},
-					},
-				},
-				"cliopts explicit-enabled": {
-					Command:   "cliopts explicit-enabled",
-					Summary:   "Explicitly CLI enabled",
-					Procedure: "/test.v1.CliOptionsTestService/ExplicitEnabled",
-					Flags: []cli.SchemaField{
-						{
-							Name: "target",
-							Type: "string",
-						},
-					},
-					Output: []cli.SchemaField{
-						{
-							Name: "result",
-							Type: "string",
-						},
-					},
-				},
-				"cliopts ws-enabled": {
-					Command:   "cliopts ws-enabled",
-					Summary:   "WS enabled, CLI default",
-					Procedure: "/test.v1.CliOptionsTestService/WsEnabled",
-					Flags: []cli.SchemaField{
-						{
-							Name: "target",
-							Type: "string",
-						},
-					},
-					Output: []cli.SchemaField{
-						{
-							Name: "result",
-							Type: "string",
-						},
-					},
-				},
-			}
 			if len(args) > 0 {
 				key := strings.Join(args, " ")
-				info, ok := schemas[key]
+				info, ok := schemaDataCliOptionsTestServiceByCommand[key]
 				if !ok {
-					for _, v := range schemas {
-						if v.Procedure == key {
-							info = v
-							ok = true
-							break
-						}
-					}
+					info, ok = schemaDataCliOptionsTestServiceByProcedure[key]
 				}
 				if !ok {
 					return fmt.Errorf("unknown command %q", key)
@@ -292,14 +394,7 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 				fmt.Fprintln(stdout, string(out))
 				return nil
 			}
-			all := make([]cli.CommandInfo, 0, len(schemas))
-			for _, info := range schemas {
-				all = append(all, info)
-			}
-			sort.Slice(all, func(i, j int) bool {
-				return all[i].Command < all[j].Command
-			})
-			out, err := json.MarshalIndent(all, "", "  ")
+			out, err := json.MarshalIndent(schemaDataCliOptionsTestServiceAll, "", "  ")
 			if err != nil {
 				return err
 			}

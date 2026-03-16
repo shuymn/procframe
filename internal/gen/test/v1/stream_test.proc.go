@@ -13,7 +13,6 @@ import (
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
 	http "net/http"
-	sort "sort"
 	strings "strings"
 )
 
@@ -24,6 +23,99 @@ type TickServiceHandler interface {
 		*procframe.Request[TickRequest],
 		procframe.ServerStream[TickResponse],
 	) error
+}
+
+var schemaDataTickServiceByCommand = map[string]cli.CommandInfo{
+	"tick watch": {
+		Command:   "tick watch",
+		Summary:   "Watch ticks",
+		Procedure: "/test.v1.TickService/Watch",
+		Flags: []cli.SchemaField{
+			{
+				Name:        "label",
+				Type:        "string",
+				Description: "Label for tick events",
+			},
+			{
+				Name:        "count",
+				Type:        "int32",
+				Description: "Number of ticks to emit",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "label",
+				Type: "string",
+			},
+			{
+				Name: "seq",
+				Type: "int32",
+			},
+		},
+		Streaming: true,
+	},
+}
+
+var schemaDataTickServiceByProcedure = map[string]cli.CommandInfo{
+	"/test.v1.TickService/Watch": {
+		Command:   "tick watch",
+		Summary:   "Watch ticks",
+		Procedure: "/test.v1.TickService/Watch",
+		Flags: []cli.SchemaField{
+			{
+				Name:        "label",
+				Type:        "string",
+				Description: "Label for tick events",
+			},
+			{
+				Name:        "count",
+				Type:        "int32",
+				Description: "Number of ticks to emit",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "label",
+				Type: "string",
+			},
+			{
+				Name: "seq",
+				Type: "int32",
+			},
+		},
+		Streaming: true,
+	},
+}
+
+var schemaDataTickServiceAll = []cli.CommandInfo{
+	{
+		Command:   "tick watch",
+		Summary:   "Watch ticks",
+		Procedure: "/test.v1.TickService/Watch",
+		Flags: []cli.SchemaField{
+			{
+				Name:        "label",
+				Type:        "string",
+				Description: "Label for tick events",
+			},
+			{
+				Name:        "count",
+				Type:        "int32",
+				Description: "Number of ticks to emit",
+			},
+		},
+		Output: []cli.SchemaField{
+			{
+				Name: "label",
+				Type: "string",
+			},
+			{
+				Name: "seq",
+				Type: "int32",
+			},
+		},
+		Streaming: true,
+	},
 }
 
 // NewTickServiceCLIRunner constructs a [cli.Runner]
@@ -102,47 +194,11 @@ func NewTickServiceCLIRunner(h TickServiceHandler, opts ...cli.Option) *cli.Runn
 		Segment: "schema",
 		Summary: "Show procedure schemas",
 		Run: func(_ context.Context, args []string, stdout io.Writer) error {
-			schemas := map[string]cli.CommandInfo{
-				"tick watch": {
-					Command:   "tick watch",
-					Summary:   "Watch ticks",
-					Procedure: "/test.v1.TickService/Watch",
-					Flags: []cli.SchemaField{
-						{
-							Name:        "label",
-							Type:        "string",
-							Description: "Label for tick events",
-						},
-						{
-							Name:        "count",
-							Type:        "int32",
-							Description: "Number of ticks to emit",
-						},
-					},
-					Output: []cli.SchemaField{
-						{
-							Name: "label",
-							Type: "string",
-						},
-						{
-							Name: "seq",
-							Type: "int32",
-						},
-					},
-					Streaming: true,
-				},
-			}
 			if len(args) > 0 {
 				key := strings.Join(args, " ")
-				info, ok := schemas[key]
+				info, ok := schemaDataTickServiceByCommand[key]
 				if !ok {
-					for _, v := range schemas {
-						if v.Procedure == key {
-							info = v
-							ok = true
-							break
-						}
-					}
+					info, ok = schemaDataTickServiceByProcedure[key]
 				}
 				if !ok {
 					return fmt.Errorf("unknown command %q", key)
@@ -154,14 +210,7 @@ func NewTickServiceCLIRunner(h TickServiceHandler, opts ...cli.Option) *cli.Runn
 				fmt.Fprintln(stdout, string(out))
 				return nil
 			}
-			all := make([]cli.CommandInfo, 0, len(schemas))
-			for _, info := range schemas {
-				all = append(all, info)
-			}
-			sort.Slice(all, func(i, j int) bool {
-				return all[i].Command < all[j].Command
-			})
-			out, err := json.MarshalIndent(all, "", "  ")
+			out, err := json.MarshalIndent(schemaDataTickServiceAll, "", "  ")
 			if err != nil {
 				return err
 			}
