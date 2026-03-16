@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 
@@ -34,9 +33,8 @@ func (h *handler) Tick(
 func main() {
 	runner := tickerv1.NewTickerServiceCLIRunner(&handler{})
 	if err := runner.Run(context.Background(), os.Args[1:]); err != nil {
-		var pfErr procframe.Error
-		if errors.As(err, &pfErr) {
-			os.Exit(cli.ExitCode(pfErr.Code()))
+		if status, ok := procframe.StatusOf(err); ok {
+			os.Exit(cli.ExitCode(status.Code))
 		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

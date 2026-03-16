@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 
@@ -37,9 +36,8 @@ func main() {
 
 	runner := greeterv1.NewGreeterServiceCLIRunner(&handler{cfg: cfg})
 	if err := runner.Run(context.Background(), rest); err != nil {
-		var pfErr procframe.Error
-		if errors.As(err, &pfErr) {
-			os.Exit(cli.ExitCode(pfErr.Code()))
+		if status, ok := procframe.StatusOf(err); ok {
+			os.Exit(cli.ExitCode(status.Code))
 		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
