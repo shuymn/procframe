@@ -499,3 +499,70 @@ func TestRunner_StructuredErrorNotWrittenWithoutOutputJSON(t *testing.T) {
 		t.Fatalf("want no structured error without --output json, got:\n%s", stderr.String())
 	}
 }
+
+func TestRunner_HelpShowsProgramName(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Node{
+		Children: map[string]*cli.Node{
+			"greet": {
+				Segment: "greet",
+				Summary: "Greet someone",
+				Run:     func(context.Context, []string, io.Writer) error { return nil },
+			},
+		},
+	}
+	var stderr bytes.Buffer
+	r := cli.NewRunner(root, cli.WithName("myapp"), cli.WithStdout(&bytes.Buffer{}), cli.WithStderr(&stderr))
+	err := r.Run(t.Context(), []string{"--help"})
+	if err != nil {
+		t.Fatalf("--help should not return error, got: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "Usage: myapp") {
+		t.Fatalf("want Usage containing program name, got:\n%s", stderr.String())
+	}
+}
+
+func TestRunner_NoArgs_ErrorIncludesProgramName(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Node{
+		Children: map[string]*cli.Node{
+			"cmd": {
+				Segment: "cmd",
+				Summary: "A command",
+				Run:     func(context.Context, []string, io.Writer) error { return nil },
+			},
+		},
+	}
+	r := cli.NewRunner(root, cli.WithName("myapp"), cli.WithStdout(&bytes.Buffer{}), cli.WithStderr(&bytes.Buffer{}))
+	err := r.Run(t.Context(), []string{})
+	if err == nil {
+		t.Fatal("expected error for no args")
+	}
+	if !strings.Contains(err.Error(), "myapp") {
+		t.Fatalf("want error mentioning program name, got: %v", err)
+	}
+}
+
+func TestRunner_WithNameEmpty(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Node{
+		Children: map[string]*cli.Node{
+			"cmd": {
+				Segment: "cmd",
+				Summary: "A command",
+				Run:     func(context.Context, []string, io.Writer) error { return nil },
+			},
+		},
+	}
+	r := cli.NewRunner(root, cli.WithName(""), cli.WithStdout(&bytes.Buffer{}), cli.WithStderr(&bytes.Buffer{}))
+	err := r.Run(t.Context(), []string{})
+	if err == nil {
+		t.Fatal("expected error for no args")
+	}
+	if err.Error() != "no command specified" {
+		t.Fatalf("want generic error without program name, got: %v", err)
+	}
+}

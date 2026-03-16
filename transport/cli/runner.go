@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/shuymn/procframe"
@@ -15,6 +16,7 @@ import (
 // Runner holds a CLI command tree and dispatches execution.
 type Runner struct {
 	root   *Node
+	name   string
 	stdout io.Writer
 	stderr io.Writer
 }
@@ -32,10 +34,16 @@ func WithStderr(w io.Writer) Option {
 	return func(r *Runner) { r.stderr = w }
 }
 
+// WithName sets the program name shown in usage and error messages.
+func WithName(name string) Option {
+	return func(r *Runner) { r.name = name }
+}
+
 // NewRunner constructs a [Runner] from a root group node.
 func NewRunner(root *Node, opts ...Option) *Runner {
 	r := &Runner{
 		root:   root,
+		name:   filepath.Base(os.Args[0]),
 		stdout: os.Stdout,
 		stderr: os.Stderr,
 	}
@@ -65,7 +73,11 @@ func (r *Runner) Run(ctx context.Context, args []string) error {
 		ctx = WithOutputFormat(ctx, gf.outputFmt)
 	}
 
-	runErr := r.traverse(ctx, r.root, remaining, []string{})
+	path := []string{}
+	if r.name != "" {
+		path = []string{r.name}
+	}
+	runErr := r.traverse(ctx, r.root, remaining, path)
 	if runErr != nil {
 		var pfErr *procframe.Error
 		if errors.As(runErr, &pfErr) && OutputFormatFromContext(ctx) == OutputJSON {
