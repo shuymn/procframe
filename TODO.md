@@ -49,6 +49,18 @@
   - Status: `resolved`
   - Decision: `Conn`。サーバー側は `Server` であり、同パッケージ内で `Conn` は明確。
 
+- Question: Adversarial verification v1 pre-release — フェーズ順序
+  - Class: `risk-bearing`
+  - Resolution: `decision`
+  - Status: `resolved`
+  - Decision: risk-first 順序 (WS → CLI → Config → Connect → Core → Codegen)。最大攻撃表面を先に検査し修正時間を最大化する。フェーズ間に依存はなく独立実行可能。
+
+- Question: Adversarial verification v1 pre-release — 検査対象スコープ
+  - Class: `risk-bearing`
+  - Resolution: `decision`
+  - Status: `resolved`
+  - Decision: 実装コードのみ。generated files (internal/gen/, examples/gen/)、examples/、cmd/protoc-gen-procframe-go/main.go (薄い entry point) は対象外。WS client (新規追加分) は WS フェーズに含める。
+
 ## Deferred Questions
 
 - Question: WS frame の正式 schema
@@ -264,3 +276,105 @@
     codegen は同時に機能して初めて WS クライアント RPC が成立する
   - Escalate if: Go の type parameter 制約により package-level generic Call functions が
     protojson marshal/unmarshal と proto.Message constraint の間で型安全に橋渡しできない場合
+
+- [x] Theme: Adversarial Verify — Transport WebSocket (Phase 1/6)
+  - Outcome: transport/ws の攻撃耐性が Critical tier で検証され、脆弱性が文書化される
+  - Goal: サーバー・クライアント・フレームプロトコル・セッション多重化・並行 dispatch・バックプレッシャーの攻撃耐性を検証
+  - Target: transport/ws/server.go, client.go, call.go, client_stream.go, stream.go, frame.go, option.go, errors.go
+  - Attack Categories: 1 (Input Boundary), 2 (Error Handling), 3 (Security Boundary), 4 (Concurrency), 5 (State & Data Integrity)
+  - Must Not Break: 実装コード、既存テスト、attack-vectors.md
+  - Non-goals: 脆弱性の修正 (別タスク)、generated files の直接検査
+  - Acceptance (EARS):
+    - When adversarial verification is executed at Critical tier, all [required] vectors within selected categories shall be probed or documented as N/A
+    - When all probes result in DEFENDED and coverage gate passes, overall verdict shall be PASS
+    - When a probe finds a vulnerability, the report shall include severity, reproduction steps, and suggested fix
+  - Evidence: `run=go test -race -run Adversarial ./transport/ws/...; oracle=adversarial report verdict PASS, all [required] vectors covered; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
+  - Gates: `static`, `integration`
+  - Executable doc: `transport/ws/adversarial_test.go`, `adversarial-report-ws.md`
+  - Why not split vertically further?: WS server と client は同一フレームプロトコル・セッション管理を共有し、分断すると cross-cutting ベクター（セッション偽装、フレーム順序攻撃）を見落とす
+  - Escalate if: Critical severity の脆弱性が設計レベルの変更を要求する場合
+
+- [x] Theme: Adversarial Verify — Transport CLI (Phase 2/6)
+  - Outcome: transport/cli の攻撃耐性が Critical tier で検証され、脆弱性が文書化される
+  - Goal: CLI runner のフラグパース・JSON payload・stdin NDJSON ストリーミング・出力フォーマット・exitcode マッピングの攻撃耐性を検証
+  - Target: transport/cli/runner.go, flag.go, json.go, format.go, stream.go, help.go, schema.go, node.go, exitcode.go
+  - Attack Categories: 1 (Input Boundary), 2 (Error Handling), 3 (Security Boundary)
+  - Must Not Break: 実装コード、既存テスト、attack-vectors.md
+  - Non-goals: 脆弱性の修正 (別タスク)、generated files の直接検査
+  - Acceptance (EARS):
+    - When adversarial verification is executed at Critical tier, all [required] vectors within selected categories shall be probed or documented as N/A
+    - When all probes result in DEFENDED and coverage gate passes, overall verdict shall be PASS
+    - When a probe finds a vulnerability, the report shall include severity, reproduction steps, and suggested fix
+  - Evidence: `run=go test -race -run Adversarial ./transport/cli/...; oracle=adversarial report verdict PASS, all [required] vectors covered; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
+  - Gates: `static`, `integration`
+  - Executable doc: `transport/cli/adversarial_test.go`, `adversarial-report-cli.md`
+  - Why not split vertically further?: flag パース・JSON ハンドリング・stream 入力は同一の runner dispatch パスを共有し、攻撃ベクターが相互に影響する
+  - Escalate if: Critical severity の脆弱性が設計レベルの変更を要求する場合
+
+- [x] Theme: Adversarial Verify — Config System (Phase 3/6)
+  - Outcome: config パッケージの攻撃耐性が Critical tier で検証され、脆弱性が文書化される
+  - Goal: 設定ロード (env/file/bootstrap)・バリデーション・シークレット redact・複合 config 衝突検出の攻撃耐性を検証
+  - Target: config/load.go, env.go, file.go, parse.go, bootstrap.go, spec.go, required.go, redact.go
+  - Attack Categories: 1 (Input Boundary), 2 (Error Handling), 3 (Security Boundary), 5 (State & Data Integrity)
+  - Must Not Break: 実装コード、既存テスト、attack-vectors.md
+  - Non-goals: 脆弱性の修正 (別タスク)、generated files の直接検査
+  - Acceptance (EARS):
+    - When adversarial verification is executed at Critical tier, all [required] vectors within selected categories shall be probed or documented as N/A
+    - When all probes result in DEFENDED and coverage gate passes, overall verdict shall be PASS
+    - When a probe finds a vulnerability, the report shall include severity, reproduction steps, and suggested fix
+  - Evidence: `run=go test -race -run Adversarial ./config/...; oracle=adversarial report verdict PASS, all [required] vectors covered; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
+  - Gates: `static`, `integration`
+  - Executable doc: `config/adversarial_test.go`, `adversarial-report-config.md`
+  - Why not split vertically further?: env/file/bootstrap は同一の Load パイプラインを構成し、攻撃ベクター（型強制、デフォルト上書き、衝突）が複数ステージにまたがる
+  - Escalate if: Critical severity の脆弱性が設計レベルの変更を要求する場合
+
+- [x] Theme: Adversarial Verify — Transport Connect (Phase 4/6)
+  - Outcome: transport/connect の攻撃耐性が Critical tier で検証され、脆弱性が文書化される
+  - Goal: Connect ハンドラアダプタ (4 shape) ・エラーコードマッピング・ErrorMapper の攻撃耐性を検証
+  - Target: transport/connect/connect.go, errors.go
+  - Attack Categories: 1 (Input Boundary), 2 (Error Handling), 3 (Security Boundary), 4 (Concurrency)
+  - Must Not Break: 実装コード、既存テスト、attack-vectors.md
+  - Non-goals: 脆弱性の修正 (別タスク)、generated files の直接検査
+  - Acceptance (EARS):
+    - When adversarial verification is executed at Critical tier, all [required] vectors within selected categories shall be probed or documented as N/A
+    - When all probes result in DEFENDED and coverage gate passes, overall verdict shall be PASS
+    - When a probe finds a vulnerability, the report shall include severity, reproduction steps, and suggested fix
+  - Evidence: `run=go test -race -run Adversarial ./transport/connect/...; oracle=adversarial report verdict PASS, all [required] vectors covered; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
+  - Gates: `static`, `integration`
+  - Executable doc: `transport/connect/adversarial_test.go`, `adversarial-report-connect.md`
+  - Why not split vertically further?: connect.go と errors.go は 2 ファイルのみで、handler adapter と error mapping は同一リクエストパスの入口と出口
+  - Escalate if: Critical severity の脆弱性が設計レベルの変更を要求する場合
+
+- [x] Theme: Adversarial Verify — Core Runtime (Phase 5/6)
+  - Outcome: procframe ルートパッケージの攻撃耐性が Critical tier で検証され、脆弱性が文書化される
+  - Goal: エラーモデル・インターセプターチェーン・Conn アダプタ・Request/Response/Meta の攻撃耐性を検証
+  - Target: errors.go, interceptor.go, handler.go, stream.go, request.go, response.go, meta.go
+  - Attack Categories: 1 (Input Boundary), 2 (Error Handling), 4 (Concurrency)
+  - Must Not Break: 実装コード、既存テスト、attack-vectors.md
+  - Non-goals: 脆弱性の修正 (別タスク)、generated files の直接検査
+  - Acceptance (EARS):
+    - When adversarial verification is executed at Critical tier, all [required] vectors within selected categories shall be probed or documented as N/A
+    - When all probes result in DEFENDED and coverage gate passes, overall verdict shall be PASS
+    - When a probe finds a vulnerability, the report shall include severity, reproduction steps, and suggested fix
+  - Evidence: `run=go test -race -run Adversarial ./...; oracle=adversarial report verdict PASS, all [required] vectors covered; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
+  - Gates: `static`, `integration`
+  - Executable doc: `adversarial_test.go`, `adversarial-report-core.md`
+  - Why not split vertically further?: errors/interceptor/handler/stream は同一の handler 呼び出しパスを構成し、interceptor 内での error 伝播や Conn の Send/Receive が cross-cutting に関わる
+  - Escalate if: Critical severity の脆弱性が設計レベルの変更を要求する場合
+
+- [x] Theme: Adversarial Verify — Codegen (Phase 6/6)
+  - Outcome: internal/codegen の攻撃耐性が Critical tier で検証され、脆弱性が文書化される
+  - Goal: プラグインパラメータ処理・proto options 抽出・バリデーション (名前衝突、パス重複)・コード生成出力の正確性の攻撃耐性を検証
+  - Target: internal/codegen/gen.go, handler.go, cli.go, connect.go, connect_client.go, ws.go, ws_client.go, config.go, config_model.go, tree.go, options.go, params.go, naming.go, validate.go
+  - Attack Categories: 1 (Input Boundary), 2 (Error Handling), 5 (State & Data Integrity)
+  - Must Not Break: 実装コード、既存テスト、attack-vectors.md
+  - Non-goals: 脆弱性の修正 (別タスク)、generated files の直接検査
+  - Acceptance (EARS):
+    - When adversarial verification is executed at Critical tier, all [required] vectors within selected categories shall be probed or documented as N/A
+    - When all probes result in DEFENDED and coverage gate passes, overall verdict shall be PASS
+    - When a probe finds a vulnerability, the report shall include severity, reproduction steps, and suggested fix
+  - Evidence: `run=go test -race -run Adversarial ./internal/codegen/...; oracle=adversarial report verdict PASS, all [required] vectors covered; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
+  - Gates: `static`, `integration`
+  - Executable doc: `internal/codegen/adversarial_test.go`, `adversarial-report-codegen.md`
+  - Why not split vertically further?: 14 ファイルだが全て同一の Generate() パイプラインを構成し、proto input → validation → code emission の一連のフローで攻撃ベクターが伝播する
+  - Escalate if: Critical severity の脆弱性が設計レベルの変更を要求する場合
