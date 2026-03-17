@@ -12,8 +12,8 @@ import (
 type OutputFormat string
 
 const (
-	// OutputText is the default human-readable format (multiline JSON).
-	OutputText OutputFormat = "text"
+	// outputText is the default human-readable format (multiline JSON).
+	outputText OutputFormat = "text"
 	// OutputJSON is compact JSON for agent consumption.
 	OutputJSON OutputFormat = "json"
 )
@@ -31,12 +31,12 @@ func WithOutputFormat(ctx context.Context, format OutputFormat) context.Context 
 }
 
 // OutputFormatFromContext extracts the output format from the context.
-// Returns OutputText if not set.
+// Returns the default text format if not set.
 func OutputFormatFromContext(ctx context.Context) OutputFormat {
 	if v, ok := ctx.Value(keyOutputFormat).(OutputFormat); ok {
 		return v
 	}
-	return OutputText
+	return outputText
 }
 
 // WithJSONPayload returns a child context carrying the raw JSON payload.
@@ -62,8 +62,8 @@ type structuredErrorBody struct {
 	Retryable bool   `json:"retryable"`
 }
 
-// FormatErrorJSON writes a structured error to w as a single JSON line.
-func FormatErrorJSON(w io.Writer, status *procframe.Status) error {
+// formatErrorJSON writes a structured error to w as a single JSON line.
+func formatErrorJSON(w io.Writer, status *procframe.Status) error {
 	se := structuredError{
 		Error: structuredErrorBody{
 			Code:      string(status.Code),

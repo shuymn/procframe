@@ -1,4 +1,4 @@
-package cli_test
+package cli
 
 import (
 	"bytes"
@@ -7,8 +7,6 @@ import (
 	"io"
 	"strings"
 	"testing"
-
-	"github.com/shuymn/procframe/transport/cli"
 )
 
 func TestWriteGroupHelp(t *testing.T) {
@@ -16,9 +14,9 @@ func TestWriteGroupHelp(t *testing.T) {
 
 	t.Run("lists visible children", func(t *testing.T) {
 		t.Parallel()
-		group := &cli.Node{
+		group := &Node{
 			Summary: "Repository operations",
-			Children: map[string]*cli.Node{
+			Children: map[string]*Node{
 				"list": {
 					Segment: "list",
 					Summary: "List items",
@@ -32,7 +30,7 @@ func TestWriteGroupHelp(t *testing.T) {
 			},
 		}
 		var buf bytes.Buffer
-		cli.WriteGroupHelp(&buf, group, []string{"app", "repo"})
+		writeGroupHelp(&buf, group, []string{"app", "repo"})
 		out := buf.String()
 
 		if !strings.Contains(out, "app repo") {
@@ -48,8 +46,8 @@ func TestWriteGroupHelp(t *testing.T) {
 
 	t.Run("excludes hidden children", func(t *testing.T) {
 		t.Parallel()
-		group := &cli.Node{
-			Children: map[string]*cli.Node{
+		group := &Node{
+			Children: map[string]*Node{
 				"visible": {
 					Segment: "visible",
 					Summary: "Visible command",
@@ -64,7 +62,7 @@ func TestWriteGroupHelp(t *testing.T) {
 			},
 		}
 		var buf bytes.Buffer
-		cli.WriteGroupHelp(&buf, group, []string{"app"})
+		writeGroupHelp(&buf, group, []string{"app"})
 		out := buf.String()
 
 		if !strings.Contains(out, "visible") {
@@ -79,9 +77,9 @@ func TestWriteGroupHelp(t *testing.T) {
 		t.Parallel()
 		fs := flag.NewFlagSet("", flag.ContinueOnError)
 		fs.String("org", "", "organization name")
-		group := &cli.Node{
+		group := &Node{
 			FlagSet: fs,
-			Children: map[string]*cli.Node{
+			Children: map[string]*Node{
 				"list": {
 					Segment: "list",
 					Run:     func(context.Context, []string, io.Writer) error { return nil },
@@ -89,7 +87,7 @@ func TestWriteGroupHelp(t *testing.T) {
 			},
 		}
 		var buf bytes.Buffer
-		cli.WriteGroupHelp(&buf, group, []string{"app", "repo"})
+		writeGroupHelp(&buf, group, []string{"app", "repo"})
 		out := buf.String()
 
 		if !strings.Contains(out, "--org") {
@@ -107,13 +105,13 @@ func TestWriteCommandHelp(t *testing.T) {
 		fs.Int("limit", 0, "max items to return")
 		fs.String("state", "", "filter by state")
 
-		cmd := &cli.Node{
+		cmd := &Node{
 			Segment: "list",
 			Summary: "List pull requests",
 			Run:     func(context.Context, []string, io.Writer) error { return nil },
 		}
 		var buf bytes.Buffer
-		cli.WriteCommandHelp(&buf, cmd, []string{"app", "repo", "pr", "list"}, fs)
+		writeCommandHelp(&buf, cmd, []string{"app", "repo", "pr", "list"}, fs)
 		out := buf.String()
 
 		if !strings.Contains(out, "app repo pr list") {

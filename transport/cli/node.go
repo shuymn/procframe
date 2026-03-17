@@ -36,7 +36,7 @@ type Node struct {
 	Run func(ctx context.Context, args []string, stdout io.Writer) error
 }
 
-// IsGroup returns true if the node is a group (has children).
-func (n *Node) IsGroup() bool {
+// isGroup returns true if the node is a group (has children).
+func (n *Node) isGroup() bool {
 	return n.Children != nil
 }

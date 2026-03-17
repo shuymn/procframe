@@ -105,7 +105,7 @@ func (r *Runner) Run(ctx context.Context, args []string) error {
 		status, ok, mappedErr := r.mapError(runErr)
 		if ok && OutputFormatFromContext(ctx) == OutputJSON {
 			//nolint:errcheck // best-effort structured error output
-			FormatErrorJSON(r.stderr, status)
+			formatErrorJSON(r.stderr, status)
 		}
 		return mappedErr
 	}
@@ -194,8 +194,8 @@ func (r *Runner) parseNodeFlags(node *Node, args, path []string) ([]string, erro
 	node.FlagSet.SetOutput(io.Discard)
 	if err := node.FlagSet.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			if node.IsGroup() {
-				WriteGroupHelp(r.stderr, node, path)
+			if node.isGroup() {
+				writeGroupHelp(r.stderr, node, path)
 			}
 			return nil, errHelp
 		}
@@ -206,8 +206,8 @@ func (r *Runner) parseNodeFlags(node *Node, args, path []string) ([]string, erro
 
 // handleNoArgs handles the case when no arguments remain after flag parsing.
 func (r *Runner) handleNoArgs(ctx context.Context, node *Node, args, path []string) error {
-	if node.IsGroup() {
-		WriteGroupHelp(r.stderr, node, path)
+	if node.isGroup() {
+		writeGroupHelp(r.stderr, node, path)
 		if len(path) == 0 {
 			return fmt.Errorf("no command specified")
 		}
@@ -224,13 +224,13 @@ func (r *Runner) dispatch(ctx context.Context, node *Node, args, path []string) 
 	name := args[0]
 
 	if name == "--help" || name == "-h" {
-		if node.IsGroup() {
-			WriteGroupHelp(r.stderr, node, path)
+		if node.isGroup() {
+			writeGroupHelp(r.stderr, node, path)
 		}
 		return nil
 	}
 
-	if !node.IsGroup() {
+	if !node.isGroup() {
 		return fmt.Errorf("unknown argument %q", name)
 	}
 
@@ -241,7 +241,7 @@ func (r *Runner) dispatch(ctx context.Context, node *Node, args, path []string) 
 
 	childPath := append([]string{}, path...)
 	childPath = append(childPath, name)
-	if child.IsGroup() {
+	if child.isGroup() {
 		return r.traverse(ctx, child, args[1:], childPath)
 	}
 
@@ -251,7 +251,7 @@ func (r *Runner) dispatch(ctx context.Context, node *Node, args, path []string) 
 		if child.HelpFlags != nil {
 			fs = child.HelpFlags()
 		}
-		WriteCommandHelp(r.stderr, child, childPath, fs)
+		writeCommandHelp(r.stderr, child, childPath, fs)
 		return nil
 	}
 
@@ -315,7 +315,7 @@ func setOutputFormat(dst *OutputFormat, val string, seen *bool) error {
 	*seen = true
 	switch val {
 	case "text":
-		*dst = OutputText
+		*dst = outputText
 	case "json":
 		*dst = OutputJSON
 	default:

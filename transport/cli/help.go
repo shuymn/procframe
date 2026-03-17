@@ -8,9 +8,9 @@ import (
 	"strings"
 )
 
-// WriteGroupHelp writes help text for a group node to w.
+// writeGroupHelp writes help text for a group node to w.
 // path is the command path leading to this group (e.g. ["app", "repo"]).
-func WriteGroupHelp(w io.Writer, g *Node, path []string) {
+func writeGroupHelp(w io.Writer, g *Node, path []string) {
 	pathStr := strings.Join(path, " ")
 	fmt.Fprintf(w, "Usage: %s <command>\n", pathStr)
 
@@ -40,10 +40,10 @@ func WriteGroupHelp(w io.Writer, g *Node, path []string) {
 	fmt.Fprintf(w, "\nUse \"%s <command> --help\" for more information.\n", pathStr)
 }
 
-// WriteCommandHelp writes help text for a leaf command to w.
+// writeCommandHelp writes help text for a leaf command to w.
 // path is the full command path (e.g. ["app", "repo", "pr", "list"]).
 // fs is the command's flag set (may be nil).
-func WriteCommandHelp(w io.Writer, cmd *Node, path []string, fs *flag.FlagSet) {
+func writeCommandHelp(w io.Writer, cmd *Node, path []string, fs *flag.FlagSet) {
 	pathStr := strings.Join(path, " ")
 	fmt.Fprintf(w, "Usage: %s [flags]\n", pathStr)
 

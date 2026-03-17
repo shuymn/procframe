@@ -1,4 +1,4 @@
-package cli_test
+package cli
 
 import (
 	"bytes"
@@ -7,24 +7,23 @@ import (
 	"testing"
 
 	"github.com/shuymn/procframe"
-	"github.com/shuymn/procframe/transport/cli"
 )
 
 func TestOutputFormatFromContext_Default(t *testing.T) {
 	t.Parallel()
 
-	got := cli.OutputFormatFromContext(t.Context())
-	if got != cli.OutputText {
-		t.Fatalf("want OutputText, got %q", got)
+	got := OutputFormatFromContext(t.Context())
+	if got != outputText {
+		t.Fatalf("want text output, got %q", got)
 	}
 }
 
 func TestOutputFormatFromContext_Set(t *testing.T) {
 	t.Parallel()
 
-	ctx := cli.WithOutputFormat(t.Context(), cli.OutputJSON)
-	got := cli.OutputFormatFromContext(ctx)
-	if got != cli.OutputJSON {
+	ctx := WithOutputFormat(t.Context(), OutputJSON)
+	got := OutputFormatFromContext(ctx)
+	if got != OutputJSON {
 		t.Fatalf("want OutputJSON, got %q", got)
 	}
 }
@@ -32,7 +31,7 @@ func TestOutputFormatFromContext_Set(t *testing.T) {
 func TestJSONPayloadFromContext_NotSet(t *testing.T) {
 	t.Parallel()
 
-	_, ok := cli.JSONPayloadFromContext(t.Context())
+	_, ok := JSONPayloadFromContext(t.Context())
 	if ok {
 		t.Fatal("want ok=false when not set")
 	}
@@ -41,8 +40,8 @@ func TestJSONPayloadFromContext_NotSet(t *testing.T) {
 func TestJSONPayloadFromContext_Set(t *testing.T) {
 	t.Parallel()
 
-	ctx := cli.WithJSONPayload(t.Context(), `{"message":"hi"}`)
-	payload, ok := cli.JSONPayloadFromContext(ctx)
+	ctx := WithJSONPayload(t.Context(), `{"message":"hi"}`)
+	payload, ok := JSONPayloadFromContext(ctx)
 	if !ok {
 		t.Fatal("want ok=true")
 	}
@@ -55,7 +54,7 @@ func TestFormatErrorJSON(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	err := cli.FormatErrorJSON(&buf, &procframe.Status{
+	err := formatErrorJSON(&buf, &procframe.Status{
 		Code:    procframe.CodeNotFound,
 		Message: "resource not found",
 	})
@@ -88,7 +87,7 @@ func TestFormatErrorJSON_Retryable(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	err := cli.FormatErrorJSON(
+	err := formatErrorJSON(
 		&buf,
 		&procframe.Status{
 			Code:      procframe.CodeUnavailable,
@@ -118,11 +117,11 @@ func TestFormatErrorJSON_BrokenWriter(t *testing.T) {
 
 	defer func() {
 		if r := recover(); r != nil {
-			t.Fatalf("FormatErrorJSON panicked: %v", r)
+			t.Fatalf("formatErrorJSON panicked: %v", r)
 		}
 	}()
 
-	err := cli.FormatErrorJSON(&brokenWriter{}, &procframe.Status{
+	err := formatErrorJSON(&brokenWriter{}, &procframe.Status{
 		Code:    procframe.CodeInternal,
 		Message: "test error",
 	})
