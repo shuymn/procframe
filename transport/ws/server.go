@@ -343,8 +343,8 @@ func (s *Server) readLoop(
 		if rErr != nil {
 			return
 		}
-		var frame inboundFrame
-		if uErr := json.Unmarshal(data, &frame); uErr != nil {
+		frame := &inboundFrame{}
+		if uErr := json.Unmarshal(data, frame); uErr != nil {
 			continue
 		}
 		switch frame.Type {
@@ -393,7 +393,7 @@ func (s *Server) runWriter(ctx context.Context, conn *websocket.Conn, writeCh <-
 // checks the semaphore, creates a session, and starts the handler goroutine.
 func (s *Server) handleOpen(
 	ctx context.Context,
-	frame inboundFrame,
+	frame *inboundFrame,
 	sem chan struct{},
 	sessions map[string]*sessionInfo,
 	mu *sync.Mutex,
@@ -448,7 +448,7 @@ func (s *Server) handleOpen(
 // startSession creates a session, inserts it into the map, and starts the handler goroutine.
 func (s *Server) startSession(
 	ctx context.Context,
-	frame inboundFrame,
+	frame *inboundFrame,
 	sessions map[string]*sessionInfo,
 	mu *sync.Mutex,
 	sem chan struct{},
@@ -488,7 +488,7 @@ func (s *Server) startSession(
 
 // handleMessage routes a "message" frame's payload to the session's recvCh.
 func (s *Server) handleMessage(
-	frame inboundFrame,
+	frame *inboundFrame,
 	sessions map[string]*sessionInfo,
 	mu *sync.Mutex,
 	writeFn func(outboundFrame),
@@ -522,7 +522,7 @@ func (s *Server) handleMessage(
 // to signal EOF to the handler. The session remains in the map (with the
 // closed flag set) so that handleCancel can still reach it.
 func (s *Server) handleClose(
-	frame inboundFrame,
+	frame *inboundFrame,
 	sessions map[string]*sessionInfo,
 	mu *sync.Mutex,
 ) {
@@ -540,7 +540,7 @@ func (s *Server) handleClose(
 
 // handleCancel processes a "cancel" frame by cancelling the session context.
 func (s *Server) handleCancel(
-	frame inboundFrame,
+	frame *inboundFrame,
 	sessions map[string]*sessionInfo,
 	mu *sync.Mutex,
 ) {

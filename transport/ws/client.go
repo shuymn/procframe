@@ -168,7 +168,7 @@ func (c *Conn) writeLoop(ctx context.Context) {
 }
 
 // send marshals a frame and enqueues it for writing.
-func (c *Conn) send(frame inboundFrame) error {
+func (c *Conn) send(frame *inboundFrame) error {
 	data, err := json.Marshal(frame)
 	if err != nil {
 		return err
@@ -183,7 +183,7 @@ func (c *Conn) send(frame inboundFrame) error {
 
 // sendOpen sends an open frame for the given session.
 func (c *Conn) sendOpen(id, procedure, shape string) error {
-	return c.send(inboundFrame{
+	return c.send(&inboundFrame{
 		Type:      frameTypeOpen,
 		ID:        id,
 		Procedure: procedure,
@@ -193,7 +193,7 @@ func (c *Conn) sendOpen(id, procedure, shape string) error {
 
 // sendMessage sends a message frame with the given payload.
 func (c *Conn) sendMessage(id string, payload json.RawMessage) error {
-	return c.send(inboundFrame{
+	return c.send(&inboundFrame{
 		Type:    frameTypeMessage,
 		ID:      id,
 		Payload: payload,
@@ -202,7 +202,7 @@ func (c *Conn) sendMessage(id string, payload json.RawMessage) error {
 
 // sendClose sends a close frame for the given session.
 func (c *Conn) sendClose(id string) error {
-	return c.send(inboundFrame{
+	return c.send(&inboundFrame{
 		Type: frameTypeClose,
 		ID:   id,
 	})
@@ -210,7 +210,7 @@ func (c *Conn) sendClose(id string) error {
 
 // sendCancel sends a cancel frame for the given session.
 func (c *Conn) sendCancel(id string) error {
-	return c.send(inboundFrame{
+	return c.send(&inboundFrame{
 		Type: frameTypeCancel,
 		ID:   id,
 	})

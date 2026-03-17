@@ -223,7 +223,7 @@ func sendFrame(
 	t *testing.T,
 	ctx context.Context, //nolint:revive // testing.T conventionally precedes context in test helpers
 	conn *websocket.Conn,
-	frame inboundFrame,
+	frame *inboundFrame,
 ) {
 	t.Helper()
 	data, err := json.Marshal(frame)
@@ -243,7 +243,7 @@ func sendOpen(
 	id, procedure, shape string,
 ) {
 	t.Helper()
-	sendFrame(t, ctx, conn, inboundFrame{
+	sendFrame(t, ctx, conn, &inboundFrame{
 		Type: "open", ID: id, Procedure: procedure, Shape: shape,
 	})
 }
@@ -256,7 +256,7 @@ func sendMessage(
 	payload json.RawMessage,
 ) {
 	t.Helper()
-	sendFrame(t, ctx, conn, inboundFrame{
+	sendFrame(t, ctx, conn, &inboundFrame{
 		Type: "message", ID: id, Payload: payload,
 	})
 }
@@ -268,7 +268,7 @@ func sendClose(
 	id string,
 ) {
 	t.Helper()
-	sendFrame(t, ctx, conn, inboundFrame{Type: "close", ID: id})
+	sendFrame(t, ctx, conn, &inboundFrame{Type: "close", ID: id})
 }
 
 func sendCancel(
@@ -278,7 +278,7 @@ func sendCancel(
 	id string,
 ) {
 	t.Helper()
-	sendFrame(t, ctx, conn, inboundFrame{Type: "cancel", ID: id})
+	sendFrame(t, ctx, conn, &inboundFrame{Type: "cancel", ID: id})
 }
 
 func readFrame(
@@ -2625,7 +2625,7 @@ func TestIntegration_WSClientConcurrentSendAndCloseSend(t *testing.T) {
 // ============================================================
 
 // assertErrorFrame checks that an outbound frame is an error with the expected code.
-func assertErrorFrame(t *testing.T, frame outboundFrame, code string) {
+func assertErrorFrame(t *testing.T, frame *outboundFrame, code string) {
 	t.Helper()
 	if frame.Error == nil {
 		t.Fatalf("expected error frame, got type=%q", frame.Type)
@@ -2696,14 +2696,14 @@ func TestIntegration_WSErrorMessageExposure(t *testing.T) {
 	t.Run("unknown_procedure", func(t *testing.T) {
 		sendOpen(t, ctx, conn, "exp-2", "/evil/Procedure", "unary")
 		out := readFrame(t, ctx, conn)
-		assertErrorFrame(t, out, string(procframe.CodeNotFound))
+		assertErrorFrame(t, &out, string(procframe.CodeNotFound))
 		checkNoInternalExposure(t, out.Error.Message)
 	})
 
 	t.Run("shape_mismatch", func(t *testing.T) {
 		sendOpen(t, ctx, conn, "exp-3", "/test.v1.EchoService/Echo", "server_stream")
 		out := readFrame(t, ctx, conn)
-		assertErrorFrame(t, out, string(procframe.CodeInvalidArgument))
+		assertErrorFrame(t, &out, string(procframe.CodeInvalidArgument))
 		checkNoInternalExposure(t, out.Error.Message)
 	})
 
@@ -2723,7 +2723,7 @@ func TestIntegration_WSErrorMessageExposure(t *testing.T) {
 		// Raw error message is passed through by design (toErrorFrame fallback).
 		// Verify it doesn't contain Go runtime internals.
 		checkNoInternalExposure(t, out.Error.Message)
-		assertErrorFrame(t, out, string(procframe.CodeInternal))
+		assertErrorFrame(t, &out, string(procframe.CodeInternal))
 	})
 }
 
@@ -2744,7 +2744,7 @@ func TestIntegration_WSMaxInflightBoundary(t *testing.T) {
 		// (reject), so every request gets CodeUnavailable + retryable.
 		sendOpen(t, ctx, conn, "zero-1", "/test.v1.EchoService/Echo", "unary")
 		out := readFrame(t, ctx, conn)
-		assertErrorFrame(t, out, string(procframe.CodeUnavailable))
+		assertErrorFrame(t, &out, string(procframe.CodeUnavailable))
 		if !out.Error.Retryable {
 			t.Fatal("expected retryable=true for maxInflight rejection")
 		}
