@@ -1157,3 +1157,58 @@ func TestIntegration_FourShape_BidiRejectsJSON(t *testing.T) {
 		t.Fatalf("want CodeInvalidArgument, got %q", status.Code)
 	}
 }
+
+// errorExposingHandler returns errors that simulate internal detail leakage.
+type errorExposingHandler struct{}
+
+func (*errorExposingHandler) Echo(
+	_ context.Context,
+	_ *procframe.Request[testv1.EchoRequest],
+) (*procframe.Response[testv1.EchoResponse], error) {
+	return nil, errors.New("connection to database at 10.0.0.5:5432 refused")
+}
+
+// Ensure the interface is satisfied at compile time.
+var _ testv1.EchoServiceHandler = (*errorExposingHandler)(nil)
+
+// TestIntegration_StructuredErrorExposure verifies that structured error
+// output (--output json) does not leak Go runtime internals.
+func TestIntegration_StructuredErrorExposure(t *testing.T) {
+	t.Parallel()
+
+	h := &errorExposingHandler{}
+
+	t.Run("handler_error_no_internals", func(t *testing.T) {
+		t.Parallel()
+		runner := testv1.NewEchoServiceCLIRunner(
+			h,
+			cli.WithStdout(io.Discard),
+			cli.WithStderr(&bytes.Buffer{}),
+		)
+		err := runner.Run(t.Context(), []string{
+			"--output", "json",
+			"echo", "run", "--message", "trigger-error",
+		})
+		if err == nil {
+			t.Fatal("expected error from handler")
+		}
+		checkNoInternalExposure(t, err.Error())
+	})
+
+	t.Run("unknown_command_error_no_internals", func(t *testing.T) {
+		t.Parallel()
+		runner := testv1.NewEchoServiceCLIRunner(
+			h,
+			cli.WithStdout(io.Discard),
+			cli.WithStderr(&bytes.Buffer{}),
+		)
+		err := runner.Run(t.Context(), []string{
+			"--output", "json",
+			"nonexistent-command",
+		})
+		if err == nil {
+			t.Fatal("expected error for unknown command")
+		}
+		checkNoInternalExposure(t, err.Error())
+	})
+}

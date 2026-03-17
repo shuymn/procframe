@@ -695,3 +695,136 @@ func TestRunner_SpecialCharactersInArgs(t *testing.T) {
 		})
 	}
 }
+
+// checkNoInternalExposure verifies an error message doesn't leak Go runtime
+// internals, file paths, or stack traces.
+func checkNoInternalExposure(t *testing.T, msg string) {
+	t.Helper()
+	sensitive := []string{
+		".go:",        // Go source file references
+		"goroutine ",  // stack traces
+		"runtime.",    // Go runtime references
+		"panic:",      // panic markers
+		"/Users/",     // macOS absolute paths
+		"/home/",      // Linux absolute paths
+		"github.com/", // module paths in stack traces
+	}
+	for _, s := range sensitive {
+		if strings.Contains(msg, s) {
+			t.Errorf("error message leaks internal detail %q: %s", s, msg)
+		}
+	}
+}
+
+// TestRunner_PreParse_EdgeCases tests edge cases in pre-parsed
+// global flags that existing tests may not cover.
+func TestRunner_PreParse_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Node{
+		Segment: "app",
+		Children: map[string]*cli.Node{
+			"echo": {
+				Segment: "echo",
+				Run: func(_ context.Context, _ []string, stdout io.Writer) error {
+					fmt.Fprint(stdout, "ok")
+					return nil
+				},
+			},
+		},
+	}
+
+	t.Run("json_equals_empty", func(t *testing.T) {
+		// --json= (equals sign with no value)
+		r := cli.NewRunner(root, cli.WithName("test"), cli.WithStdout(io.Discard), cli.WithStderr(io.Discard))
+		err := r.Run(t.Context(), []string{"--json=", "echo"})
+		if err == nil {
+			t.Fatal("expected error for --json= with empty value")
+		}
+		checkNoInternalExposure(t, err.Error())
+	})
+
+	t.Run("output_equals_empty", func(t *testing.T) {
+		// --output= (equals sign with no value)
+		r := cli.NewRunner(root, cli.WithName("test"), cli.WithStdout(io.Discard), cli.WithStderr(io.Discard))
+		err := r.Run(t.Context(), []string{"--output=", "echo"})
+		if err == nil {
+			t.Fatal("expected error for --output= with empty value")
+		}
+		checkNoInternalExposure(t, err.Error())
+	})
+
+	t.Run("json_without_value_at_end", func(t *testing.T) {
+		// --json at the end of args (no value follows)
+		r := cli.NewRunner(root, cli.WithName("test"), cli.WithStdout(io.Discard), cli.WithStderr(io.Discard))
+		err := r.Run(t.Context(), []string{"echo", "--json"})
+		if err == nil {
+			t.Fatal("expected error for --json without value")
+		}
+		checkNoInternalExposure(t, err.Error())
+	})
+
+	t.Run("output_with_injection_attempt", func(t *testing.T) {
+		// --output with a value that attempts injection
+		r := cli.NewRunner(root, cli.WithName("test"), cli.WithStdout(io.Discard), cli.WithStderr(io.Discard))
+		err := r.Run(t.Context(), []string{"--output", "json; rm -rf /", "echo"})
+		if err == nil {
+			t.Fatal("expected error for invalid output format")
+		}
+		checkNoInternalExposure(t, err.Error())
+	})
+}
+
+// TestRunner_InvalidNodeStates tests edge cases in the command
+// tree that involve ambiguous or malformed node configurations.
+func TestRunner_InvalidNodeStates(t *testing.T) {
+	t.Parallel()
+
+	t.Run("leaf_with_nil_run_and_extra_args", func(t *testing.T) {
+		// A leaf node with nil Run but args are provided.
+		root := &cli.Node{
+			Segment: "app",
+			Children: map[string]*cli.Node{
+				"broken": {
+					Segment: "broken",
+					Run:     nil,
+				},
+			},
+		}
+		r := cli.NewRunner(root, cli.WithName("test"), cli.WithStdout(io.Discard), cli.WithStderr(io.Discard))
+		err := r.Run(t.Context(), []string{"broken", "extra", "args"})
+		if err == nil {
+			t.Fatal("expected error for non-runnable command with extra args")
+		}
+		checkNoInternalExposure(t, err.Error())
+	})
+
+	t.Run("deeply_nested_unknown_command", func(t *testing.T) {
+		// Deeply nested groups with non-existent command at the end.
+		root := &cli.Node{
+			Segment: "app",
+			Children: map[string]*cli.Node{
+				"a": {
+					Segment: "a",
+					Children: map[string]*cli.Node{
+						"b": {
+							Segment: "b",
+							Children: map[string]*cli.Node{
+								"c": {
+									Segment:  "c",
+									Children: map[string]*cli.Node{},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		r := cli.NewRunner(root, cli.WithName("test"), cli.WithStdout(io.Discard), cli.WithStderr(io.Discard))
+		err := r.Run(t.Context(), []string{"a", "b", "c", "nonexistent"})
+		if err == nil {
+			t.Fatal("expected error for unknown command in deep nesting")
+		}
+		checkNoInternalExposure(t, err.Error())
+	})
+}
