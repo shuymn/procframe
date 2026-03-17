@@ -245,12 +245,7 @@ func TestStatusError_ErrorNoInternalLeak(t *testing.T) {
 		t.Fatalf("unexpected error format: %q", msg)
 	}
 
-	// Verify no stack trace or file paths.
-	for _, leak := range []string{".go:", "goroutine", "runtime.", "panic"} {
-		if strings.Contains(msg, leak) {
-			t.Fatalf("error message leaks internal: %q found in %q", leak, msg)
-		}
-	}
+	checkNoInternalLeak(t, msg)
 }
 
 func TestStatusError_UnknownCode(t *testing.T) {
@@ -266,3 +261,65 @@ func TestStatusError_UnknownCode(t *testing.T) {
 type nonStatusError struct{}
 
 func (nonStatusError) Error() string { return "custom" }
+
+func checkNoInternalLeak(t *testing.T, msg string) {
+	t.Helper()
+	sensitive := []string{".go:", "goroutine ", "runtime.", "panic:", "/Users/", "/home/", "github.com/"}
+	for _, s := range sensitive {
+		if strings.Contains(msg, s) {
+			t.Errorf("error message leaks internal detail %q: %s", s, msg)
+		}
+	}
+}
+
+// TestStatusError_CodeInjection verifies that malicious strings
+// in Code or Message don't cause format injection in Error() output.
+func TestStatusError_CodeInjection(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		code    procframe.Code
+		message string
+	}{
+		{"newline_in_code", procframe.Code("code\ninjected"), "msg"},
+		{"newline_in_message", procframe.CodeInternal, "line1\nline2"},
+		{"format_verb_in_message", procframe.CodeInternal, "%s %d %v"},
+		{"null_byte_in_code", procframe.Code("code\x00evil"), "msg"},
+		{"long_code", procframe.Code(strings.Repeat("x", 100000)), "msg"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			err := procframe.NewError(tc.code, tc.message)
+			msg := err.Error()
+			// No panic, no format verb expansion.
+			if strings.Contains(msg, "%!(") {
+				t.Errorf("format verb expanded in Error(): %q", msg)
+			}
+			checkNoInternalLeak(t, msg)
+		})
+	}
+}
+
+// TestStatusError_WrapCauseNotExposed verifies that the cause
+// error message is NOT included in StatusError.Error() output.
+func TestStatusError_WrapCauseNotExposed(t *testing.T) {
+	t.Parallel()
+
+	cause := procframe.NewError(procframe.CodeInternal, "db connection to 10.0.0.5:5432 failed")
+	wrapped := procframe.WrapError(procframe.CodeUnavailable, "service error", cause)
+
+	msg := wrapped.Error()
+	if strings.Contains(msg, "10.0.0.5") {
+		t.Error("VULNERABLE: cause error leaked in wrapped error message")
+	}
+	if strings.Contains(msg, "db connection") {
+		t.Error("VULNERABLE: cause message leaked in wrapped error message")
+	}
+	// Expected format: "unavailable: service error"
+	if !strings.HasPrefix(msg, "unavailable: service error") {
+		t.Errorf("unexpected error format: %q", msg)
+	}
+}

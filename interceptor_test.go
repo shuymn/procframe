@@ -1424,3 +1424,34 @@ func (c *modifyReceiveAndSendConn) Send(resp procframe.AnyResponse) error {
 	c.modifySend(resp)
 	return c.Conn.Send(resp)
 }
+
+// TestInvokeUnary_InterceptorWrongTypeSend verifies that an interceptor
+// sending a response of the wrong type produces a clean error, not a panic.
+func TestInvokeUnary_InterceptorWrongTypeSend(t *testing.T) {
+	t.Parallel()
+
+	// An interceptor that sends an AnyResponse with wrong underlying type.
+	badInterceptor := procframe.InterceptorFunc(func(_ procframe.HandlerFunc) procframe.HandlerFunc {
+		return func(_ context.Context, conn procframe.Conn) error {
+			// Skip Receive, directly send a response with wrong type.
+			return conn.Send(procframe.NewAnyResponse("wrong-type-string"))
+		}
+	})
+
+	handler := func(_ context.Context, _ *procframe.Request[int]) (*procframe.Response[int], error) {
+		return &procframe.Response[int]{Msg: new(int)}, nil
+	}
+
+	_, err := procframe.InvokeUnary(
+		t.Context(),
+		procframe.CallSpec{Procedure: "/test", Transport: "test", Shape: procframe.CallShapeUnary},
+		&procframe.Request[int]{Msg: new(int)},
+		handler,
+		badInterceptor,
+	)
+	if err == nil {
+		t.Fatal("expected error for wrong response type from interceptor")
+	}
+	// Verify it's a clean error, not a panic.
+	checkNoInternalLeak(t, err.Error())
+}
