@@ -28,18 +28,18 @@ type Status struct {
 
 // ErrorMapper maps an error to a transport-facing [Status].
 // It returns false when the error should remain unclassified.
-type ErrorMapper func(error) (Status, bool)
+type ErrorMapper func(error) (*Status, bool)
 
 // StatusError is the default structured error wrapper provided by procframe.
 type StatusError struct {
-	status Status
+	status *Status
 	cause  error
 }
 
 // NewError creates a [StatusError] with the given code and message.
 func NewError(code Code, msg string) *StatusError {
 	return &StatusError{
-		status: Status{
+		status: &Status{
 			Code:    code,
 			Message: msg,
 		},
@@ -60,12 +60,12 @@ func WrapError(code Code, msg string, cause error) *StatusError {
 
 // StatusOf extracts a [Status] from an error chain.
 // It returns false when the chain does not contain a [StatusError].
-func StatusOf(err error) (Status, bool) {
+func StatusOf(err error) (*Status, bool) {
 	var statusErr *StatusError
 	if errors.As(err, &statusErr) {
 		return statusErr.Status(), true
 	}
-	return Status{}, false
+	return nil, false
 }
 
 // CodeOf extracts the [Code] from an error chain. It returns the code
@@ -88,12 +88,14 @@ func (e *StatusError) Message() string { return e.status.Message }
 func (e *StatusError) IsRetryable() bool { return e.status.Retryable }
 
 // Status returns the transport-facing status carried by the error.
-func (e *StatusError) Status() Status { return e.status }
+func (e *StatusError) Status() *Status { return e.status }
 
 // WithRetryable returns a copy of e with the retryable flag set to true.
 func (e *StatusError) WithRetryable() *StatusError {
 	next := *e
-	next.status.Retryable = true
+	status := *e.status
+	status.Retryable = true
+	next.status = &status
 	return &next
 }
 

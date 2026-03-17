@@ -485,7 +485,7 @@ func NewLargeProtoServiceCLIRunner(h LargeProtoServiceHandler, opts ...cli.Optio
 				}
 				return &procframe.Request[CollectSpanRequest]{Msg: req}, nil
 			})
-			resp, err := procframe.InvokeClientStream(ctx, procframe.CallSpec{Procedure: "/test.largeproto.v1.LargeProtoService/CollectSpans", Transport: procframe.TransportCLI, Shape: procframe.CallShapeClientStream}, reader, h.CollectSpans, cli.InterceptorsFromContext(ctx)...)
+			resp, err := procframe.InvokeClientStream(ctx, &procframe.CallSpec{Procedure: "/test.largeproto.v1.LargeProtoService/CollectSpans", Transport: procframe.TransportCLI, Shape: procframe.CallShapeClientStream}, reader, h.CollectSpans, cli.InterceptorsFromContext(ctx)...)
 			if err != nil {
 				return err
 			}
@@ -540,9 +540,9 @@ func NewLargeProtoServiceCLIRunner(h LargeProtoServiceHandler, opts ...cli.Optio
 					}
 				}
 			}
-			resp, err := procframe.InvokeUnary(ctx, procframe.CallSpec{Procedure: "/test.largeproto.v1.LargeProtoService/IngestSpan", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary}, &procframe.Request[IngestSpanRequest]{
+			resp, err := procframe.InvokeUnary(ctx, &procframe.CallSpec{Procedure: "/test.largeproto.v1.LargeProtoService/IngestSpan", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary}, &procframe.Request[IngestSpanRequest]{
 				Msg:  req,
-				Meta: procframe.Meta{Procedure: "/test.largeproto.v1.LargeProtoService/IngestSpan"},
+				Meta: &procframe.Meta{Procedure: "/test.largeproto.v1.LargeProtoService/IngestSpan"},
 			}, h.IngestSpan, cli.InterceptorsFromContext(ctx)...)
 			if err != nil {
 				return err
@@ -613,7 +613,7 @@ func NewLargeProtoServiceCLIRunner(h LargeProtoServiceHandler, opts ...cli.Optio
 					return nil
 				},
 			)
-			return procframe.InvokeBidi(ctx, procframe.CallSpec{Procedure: "/test.largeproto.v1.LargeProtoService/StreamSpans", Transport: procframe.TransportCLI, Shape: procframe.CallShapeBidi}, stream, h.StreamSpans, cli.InterceptorsFromContext(ctx)...)
+			return procframe.InvokeBidi(ctx, &procframe.CallSpec{Procedure: "/test.largeproto.v1.LargeProtoService/StreamSpans", Transport: procframe.TransportCLI, Shape: procframe.CallShapeBidi}, stream, h.StreamSpans, cli.InterceptorsFromContext(ctx)...)
 		},
 	}
 	node_large_watch := &cli.Node{
@@ -676,9 +676,9 @@ func NewLargeProtoServiceCLIRunner(h LargeProtoServiceHandler, opts ...cli.Optio
 				fmt.Fprintln(stdout, string(out))
 				return nil
 			})
-			return procframe.InvokeServerStream(ctx, procframe.CallSpec{Procedure: "/test.largeproto.v1.LargeProtoService/WatchSpans", Transport: procframe.TransportCLI, Shape: procframe.CallShapeServerStream}, &procframe.Request[WatchSpansRequest]{
+			return procframe.InvokeServerStream(ctx, &procframe.CallSpec{Procedure: "/test.largeproto.v1.LargeProtoService/WatchSpans", Transport: procframe.TransportCLI, Shape: procframe.CallShapeServerStream}, &procframe.Request[WatchSpansRequest]{
 				Msg:  req,
-				Meta: procframe.Meta{Procedure: "/test.largeproto.v1.LargeProtoService/WatchSpans"},
+				Meta: &procframe.Meta{Procedure: "/test.largeproto.v1.LargeProtoService/WatchSpans"},
 			}, stream, h.WatchSpans, cli.InterceptorsFromContext(ctx)...)
 		},
 		HelpFlags: func() *flag.FlagSet {

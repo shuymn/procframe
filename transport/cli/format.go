@@ -63,7 +63,7 @@ type structuredErrorBody struct {
 }
 
 // FormatErrorJSON writes a structured error to w as a single JSON line.
-func FormatErrorJSON(w io.Writer, status procframe.Status) error {
+func FormatErrorJSON(w io.Writer, status *procframe.Status) error {
 	se := structuredError{
 		Error: structuredErrorBody{
 			Code:      string(status.Code),

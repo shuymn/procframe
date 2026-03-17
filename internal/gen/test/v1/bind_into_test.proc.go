@@ -160,9 +160,9 @@ func NewPRServiceCLIRunner(h PRServiceHandler, opts ...cli.Option) *cli.Runner {
 					}
 				}
 			}
-			resp, err := procframe.InvokeUnary(ctx, procframe.CallSpec{Procedure: "/test.v1.PRService/List", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary}, &procframe.Request[PRListRequest]{
+			resp, err := procframe.InvokeUnary(ctx, &procframe.CallSpec{Procedure: "/test.v1.PRService/List", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary}, &procframe.Request[PRListRequest]{
 				Msg:  req,
-				Meta: procframe.Meta{Procedure: "/test.v1.PRService/List"},
+				Meta: &procframe.Meta{Procedure: "/test.v1.PRService/List"},
 			}, h.List, cli.InterceptorsFromContext(ctx)...)
 			if err != nil {
 				return err

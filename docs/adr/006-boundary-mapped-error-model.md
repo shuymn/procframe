@@ -13,9 +13,9 @@ We want handlers to return ordinary Go errors by default while still allowing CL
 ## Decision
 
 - Remove the public `procframe.Error` interface.
-- Introduce `procframe.Status` as the transport-facing value object with `Code`, `Message`, and `Retryable`.
-- Keep `procframe.StatusError` as the structured error wrapper type and expose extractors such as `StatusOf` and `CodeOf`.
-- Introduce `procframe.ErrorMapper` so transports can classify plain errors at the boundary.
+- Introduce `procframe.Status` as the transport-facing metadata struct with `Code`, `Message`, and `Retryable`.
+- Keep `procframe.StatusError` as the structured error wrapper type, but store and expose `*Status` so transports can pass status metadata without per-call struct copies.
+- Introduce `procframe.ErrorMapper` so transports can classify plain errors at the boundary and return `*Status`.
 - No mapper is set by default. The application must explicitly provide an `ErrorMapper` to classify errors at the boundary.
 - CLI uses an `ErrorMapper` to decide structured error output and exit-code semantics, and wraps mapped plain errors into `StatusError` before returning them to callers.
 
@@ -25,3 +25,4 @@ We want handlers to return ordinary Go errors by default while still allowing CL
 - Transport-specific classification policy lives at the boundary instead of in handler contracts.
 - User-defined error types no longer become structured procframe errors merely by implementing a matching method set; applications must map them explicitly.
 - Future transports can reuse the same `Status`/`ErrorMapper` model without requiring handlers to depend on transport semantics.
+- Boundary code and structured error extraction avoid repeated `Status` copies on hot paths.

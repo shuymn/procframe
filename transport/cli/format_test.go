@@ -55,7 +55,7 @@ func TestFormatErrorJSON(t *testing.T) {
 	t.Parallel()
 
 	var buf bytes.Buffer
-	err := cli.FormatErrorJSON(&buf, procframe.Status{
+	err := cli.FormatErrorJSON(&buf, &procframe.Status{
 		Code:    procframe.CodeNotFound,
 		Message: "resource not found",
 	})
@@ -90,7 +90,7 @@ func TestFormatErrorJSON_Retryable(t *testing.T) {
 	var buf bytes.Buffer
 	err := cli.FormatErrorJSON(
 		&buf,
-		procframe.Status{
+		&procframe.Status{
 			Code:      procframe.CodeUnavailable,
 			Message:   "service unavailable",
 			Retryable: true,
@@ -122,7 +122,7 @@ func TestFormatErrorJSON_BrokenWriter(t *testing.T) {
 		}
 	}()
 
-	err := cli.FormatErrorJSON(&brokenWriter{}, procframe.Status{
+	err := cli.FormatErrorJSON(&brokenWriter{}, &procframe.Status{
 		Code:    procframe.CodeInternal,
 		Message: "test error",
 	})

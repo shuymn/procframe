@@ -148,16 +148,16 @@ func InterceptorsFromContext(ctx context.Context) []procframe.Interceptor {
 	return append([]procframe.Interceptor(nil), interceptors...)
 }
 
-func (r *Runner) mapError(err error) (procframe.Status, bool, error) {
+func (r *Runner) mapError(err error) (*procframe.Status, bool, error) {
 	if status, ok := procframe.StatusOf(err); ok {
 		return status, true, err
 	}
 	if r.errorMapper == nil {
-		return procframe.Status{}, false, err
+		return nil, false, err
 	}
 	status, ok := r.errorMapper(err)
 	if !ok {
-		return procframe.Status{}, false, err
+		return nil, false, err
 	}
 	mapped := procframe.WrapError(status.Code, status.Message, err)
 	if status.Retryable {

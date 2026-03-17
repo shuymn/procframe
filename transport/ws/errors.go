@@ -14,7 +14,7 @@ func toErrorFrame(id string, err error, mapper procframe.ErrorMapper) outboundFr
 		status, ok = mapper(err)
 	}
 	if !ok {
-		status = procframe.Status{
+		status = &procframe.Status{
 			Code:    procframe.CodeInternal,
 			Message: err.Error(),
 		}

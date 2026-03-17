@@ -58,7 +58,7 @@ func HandleUnary[Req, Res any](
 	procedure string,
 	h func(context.Context, *procframe.Request[Req]) (*procframe.Response[Res], error),
 ) {
-	spec := procframe.CallSpec{
+	spec := &procframe.CallSpec{
 		Procedure: procedure,
 		Transport: procframe.TransportWS,
 		Shape:     procframe.CallShapeUnary,
@@ -94,7 +94,7 @@ func HandleUnary[Req, Res any](
 			resp, err := procframe.InvokeUnary(ctx, spec,
 				&procframe.Request[Req]{
 					Msg:  req,
-					Meta: procframe.Meta{Procedure: procedure, RequestID: id},
+					Meta: &procframe.Meta{Procedure: procedure, RequestID: id},
 				}, h, s.opts.interceptors...)
 			if err != nil {
 				writeFn(toErrorFrame(id, err, s.opts.errorMapper))
@@ -111,7 +111,7 @@ func HandleServerStream[Req, Res any](
 	procedure string,
 	h func(context.Context, *procframe.Request[Req], procframe.ServerStream[Res]) error,
 ) {
-	spec := procframe.CallSpec{
+	spec := &procframe.CallSpec{
 		Procedure: procedure,
 		Transport: procframe.TransportWS,
 		Shape:     procframe.CallShapeServerStream,
@@ -152,7 +152,7 @@ func HandleServerStream[Req, Res any](
 			err = procframe.InvokeServerStream(ctx, spec,
 				&procframe.Request[Req]{
 					Msg:  req,
-					Meta: procframe.Meta{Procedure: procedure, RequestID: id},
+					Meta: &procframe.Meta{Procedure: procedure, RequestID: id},
 				}, stream, h, s.opts.interceptors...)
 			if err != nil {
 				writeFn(toErrorFrame(id, err, s.opts.errorMapper))
@@ -169,7 +169,7 @@ func HandleClientStream[Req, Res any](
 	procedure string,
 	h func(context.Context, procframe.ClientStream[Req]) (*procframe.Response[Res], error),
 ) {
-	spec := procframe.CallSpec{
+	spec := &procframe.CallSpec{
 		Procedure: procedure,
 		Transport: procframe.TransportWS,
 		Shape:     procframe.CallShapeClientStream,
@@ -210,7 +210,7 @@ func HandleBidi[Req, Res any](
 			}
 			err := procframe.InvokeBidi(
 				ctx,
-				procframe.CallSpec{
+				&procframe.CallSpec{
 					Procedure: procedure,
 					Transport: procframe.TransportWS,
 					Shape:     procframe.CallShapeBidi,

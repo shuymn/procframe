@@ -55,11 +55,11 @@ func NewUnaryHandler[Req, Res any](
 		func(ctx context.Context, req *connectrpc.Request[Req]) (*connectrpc.Response[Res], error) {
 			pReq := &procframe.Request[Req]{
 				Msg:  req.Msg,
-				Meta: procframe.Meta{Procedure: procedure},
+				Meta: &procframe.Meta{Procedure: procedure},
 			}
 			pResp, err := procframe.InvokeUnary(
 				ctx,
-				procframe.CallSpec{
+				&procframe.CallSpec{
 					Procedure: procedure,
 					Transport: procframe.TransportConnect,
 					Shape:     procframe.CallShapeUnary,
@@ -93,7 +93,7 @@ func NewClientStreamHandler[Req, Res any](
 			adapter := &clientStream[Req]{getCtx: func() context.Context { return ctx }, stream: stream}
 			pResp, err := procframe.InvokeClientStream(
 				ctx,
-				procframe.CallSpec{
+				&procframe.CallSpec{
 					Procedure: procedure,
 					Transport: procframe.TransportConnect,
 					Shape:     procframe.CallShapeClientStream,
@@ -126,12 +126,12 @@ func NewServerStreamHandler[Req, Res any](
 		func(ctx context.Context, req *connectrpc.Request[Req], stream *connectrpc.ServerStream[Res]) error {
 			pReq := &procframe.Request[Req]{
 				Msg:  req.Msg,
-				Meta: procframe.Meta{Procedure: procedure},
+				Meta: &procframe.Meta{Procedure: procedure},
 			}
 			adapter := &serverStream[Res]{getCtx: func() context.Context { return ctx }, stream: stream}
 			if err := procframe.InvokeServerStream(
 				ctx,
-				procframe.CallSpec{
+				&procframe.CallSpec{
 					Procedure: procedure,
 					Transport: procframe.TransportConnect,
 					Shape:     procframe.CallShapeServerStream,
@@ -162,7 +162,7 @@ func NewBidiStreamHandler[Req, Res any](
 			adapter := &bidiStream[Req, Res]{getCtx: func() context.Context { return ctx }, stream: stream}
 			if err := procframe.InvokeBidi(
 				ctx,
-				procframe.CallSpec{
+				&procframe.CallSpec{
 					Procedure: procedure,
 					Transport: procframe.TransportConnect,
 					Shape:     procframe.CallShapeBidi,

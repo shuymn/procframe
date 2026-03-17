@@ -515,15 +515,15 @@ func TestRunner_StructuredErrorJSON_UsesCustomMapper(t *testing.T) {
 		root,
 		cli.WithStdout(&bytes.Buffer{}),
 		cli.WithStderr(&stderr),
-		cli.WithErrorMapper(func(err error) (procframe.Status, bool) {
+		cli.WithErrorMapper(func(err error) (*procframe.Status, bool) {
 			if errors.Is(err, domainErr) {
-				return procframe.Status{
+				return &procframe.Status{
 					Code:      procframe.CodeUnavailable,
 					Message:   "mapped unavailable",
 					Retryable: true,
 				}, true
 			}
-			return procframe.Status{}, false
+			return nil, false
 		}),
 	)
 

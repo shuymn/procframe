@@ -445,7 +445,7 @@ func emitHandlerCall(g *protogen.GeneratedFile, method *protogen.Method, leaf *l
 		"\t\t\tresp, err := ",
 		procframePkg.Ident("InvokeUnary"),
 		"(ctx, ",
-		procframePkg.Ident("CallSpec"),
+		"&", procframePkg.Ident("CallSpec"),
 		"{",
 		"Procedure: ",
 		fmt.Sprintf("%q", leaf.FullName),
@@ -460,7 +460,7 @@ func emitHandlerCall(g *protogen.GeneratedFile, method *protogen.Method, leaf *l
 		"]{",
 	)
 	g.P("\t\t\t\tMsg:  req,")
-	g.P("\t\t\t\tMeta: ", procframePkg.Ident("Meta"), "{Procedure: ", fmt.Sprintf("%q", leaf.FullName), "},")
+	g.P("\t\t\t\tMeta: &", procframePkg.Ident("Meta"), "{Procedure: ", fmt.Sprintf("%q", leaf.FullName), "},")
 	g.P("\t\t\t}, h.", method.GoName, ", ", cliPkg.Ident("InterceptorsFromContext"), "(ctx)...)")
 	g.P("\t\t\tif err != nil {")
 	g.P("\t\t\t\treturn err")
@@ -528,7 +528,7 @@ func emitStreamingHandlerCall(g *protogen.GeneratedFile, method *protogen.Method
 		"\t\t\treturn ",
 		procframePkg.Ident("InvokeServerStream"),
 		"(ctx, ",
-		procframePkg.Ident("CallSpec"),
+		"&", procframePkg.Ident("CallSpec"),
 		"{",
 		"Procedure: ",
 		fmt.Sprintf("%q", leaf.FullName),
@@ -543,7 +543,7 @@ func emitStreamingHandlerCall(g *protogen.GeneratedFile, method *protogen.Method
 		"]{",
 	)
 	g.P("\t\t\t\tMsg:  req,")
-	g.P("\t\t\t\tMeta: ", procframePkg.Ident("Meta"), "{Procedure: ", fmt.Sprintf("%q", leaf.FullName), "},")
+	g.P("\t\t\t\tMeta: &", procframePkg.Ident("Meta"), "{Procedure: ", fmt.Sprintf("%q", leaf.FullName), "},")
 	g.P("\t\t\t}, stream, h.", method.GoName, ", ", cliPkg.Ident("InterceptorsFromContext"), "(ctx)...)")
 }
 
@@ -610,7 +610,7 @@ func emitClientStreamBody(g *protogen.GeneratedFile, method *protogen.Method, le
 		"\t\t\tresp, err := ",
 		procframePkg.Ident("InvokeClientStream"),
 		"(ctx, ",
-		procframePkg.Ident("CallSpec"),
+		"&", procframePkg.Ident("CallSpec"),
 		"{",
 		"Procedure: ",
 		fmt.Sprintf("%q", leaf.FullName),
@@ -702,7 +702,7 @@ func emitBidiStreamBody(g *protogen.GeneratedFile, method *protogen.Method, leaf
 		"\t\t\treturn ",
 		procframePkg.Ident("InvokeBidi"),
 		"(ctx, ",
-		procframePkg.Ident("CallSpec"),
+		"&", procframePkg.Ident("CallSpec"),
 		"{",
 		"Procedure: ",
 		fmt.Sprintf("%q", leaf.FullName),

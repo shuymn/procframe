@@ -1015,14 +1015,14 @@ func TestIntegration_WSErrorMapper(t *testing.T) {
 
 	errCustom := errors.New("custom domain error")
 
-	s := ws.NewServer(ws.WithErrorMapper(func(err error) (procframe.Status, bool) {
+	s := ws.NewServer(ws.WithErrorMapper(func(err error) (*procframe.Status, bool) {
 		if errors.Is(err, errCustom) {
-			return procframe.Status{
+			return &procframe.Status{
 				Code:    procframe.CodePermissionDenied,
 				Message: "mapped: " + err.Error(),
 			}, true
 		}
-		return procframe.Status{}, false
+		return nil, false
 	}))
 	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
 		func(

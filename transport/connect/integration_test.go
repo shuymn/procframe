@@ -697,8 +697,8 @@ func TestIntegration_ConnectErrorMapperFallback(t *testing.T) {
 		func(_ context.Context, _ *procframe.Request[testv1.EchoRequest]) (*procframe.Response[testv1.EchoResponse], error) {
 			return nil, errors.New("unmapped error")
 		},
-		connecttransport.WithErrorMapper(func(_ error) (procframe.Status, bool) {
-			return procframe.Status{}, false // decline mapping
+		connecttransport.WithErrorMapper(func(_ error) (*procframe.Status, bool) {
+			return nil, false // decline mapping
 		}),
 	)
 
@@ -1041,8 +1041,8 @@ func TestIntegration_ConnectRawErrorFallbackExposure(t *testing.T) {
 			func(_ context.Context, _ *procframe.Request[testv1.EchoRequest]) (*procframe.Response[testv1.EchoResponse], error) {
 				return nil, errors.New("secret db connection string: postgres://admin:password@db:5432")
 			},
-			connecttransport.WithErrorMapper(func(_ error) (procframe.Status, bool) {
-				return procframe.Status{
+			connecttransport.WithErrorMapper(func(_ error) (*procframe.Status, bool) {
+				return &procframe.Status{
 					Code:    procframe.CodeUnavailable,
 					Message: "service temporarily unavailable",
 				}, true
