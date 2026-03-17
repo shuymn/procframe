@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package test.largeproto.v1;
+
+import "procframe/options/v1/options.proto";
+import "test/otel/v1/common.proto";
+import "test/otel/v1/trace.proto";
+
+option go_package = "github.com/shuymn/procframe/internal/gen/test/largeproto/v1;largeprotov1";
+
+// IngestSpanRequest wraps a complex OTel Span for unary ingest.
+message IngestSpanRequest {
+  test.otel.v1.Span span = 1;
+  string service_name = 2 [(procframe.options.v1.field).description = "Originating service name"];
+  bool dry_run = 3 [(procframe.options.v1.field).description = "Validate without persisting"];
+}
+
+// IngestSpanResponse returns summary of the ingested span.
+message IngestSpanResponse {
+  string span_id_hex = 1;
+  int32 attribute_count = 2;
+  int32 event_count = 3;
+  int32 link_count = 4;
+}
+
+// WatchSpansRequest provides filters for server-stream span watching.
+// Scalar fields exercise CLI flag generation for various types.
+message WatchSpansRequest {
+  string service_name = 1 [(procframe.options.v1.field).description = "Filter by service name"];
+  int32 limit = 2 [(procframe.options.v1.field).description = "Maximum spans to return"];
+  int64 since_unix_nano = 3 [(procframe.options.v1.field).description = "Start time filter in unix nanos"];
+  bool include_events = 4 [(procframe.options.v1.field).description = "Include span events in output"];
+  test.otel.v1.Span.SpanKind kind_filter = 5 [(procframe.options.v1.field).description = "Filter by span kind"];
+}
+
+// WatchSpanEvent wraps a Span with source metadata.
+message WatchSpanEvent {
+  test.otel.v1.Span span = 1;
+  string source = 2;
+}
+
+// CollectSpanRequest wraps a Span for client-stream / bidi collection.
+message CollectSpanRequest {
+  test.otel.v1.Span span = 1;
+}
+
+// CollectSpansResponse returns aggregate info from collected spans.
+message CollectSpansResponse {
+  int32 total_spans = 1;
+  int32 total_events = 2;
+  string trace_ids = 3;
+}
+
+// LargeProtoService exercises all four RPC shapes with complex OTel messages.
+service LargeProtoService {
+  option (procframe.options.v1.cli_group) = {
+    path: {
+      segments: ["large"]
+    }
+    summary: "Large proto operations"
+  };
+
+  // Unary: ingest a single span.
+  rpc IngestSpan(IngestSpanRequest) returns (IngestSpanResponse) {
+    option (procframe.options.v1.proc) = {
+      cli_path: {
+        segments: ["ingest"]
+      }
+      connect: {
+        enabled: true
+      }
+      ws: {
+        enabled: true
+      }
+      summary: "Ingest a single span"
+    };
+  }
+
+  // Client-stream: collect multiple spans.
+  rpc CollectSpans(stream CollectSpanRequest) returns (CollectSpansResponse) {
+    option (procframe.options.v1.proc) = {
+      cli_path: {
+        segments: ["collect"]
+      }
+      connect: {
+        enabled: true
+      }
+      ws: {
+        enabled: true
+      }
+      summary: "Collect spans from stream"
+    };
+  }
+
+  // Server-stream: watch spans with filters.
+  rpc WatchSpans(WatchSpansRequest) returns (stream WatchSpanEvent) {
+    option (procframe.options.v1.proc) = {
+      cli_path: {
+        segments: ["watch"]
+      }
+      connect: {
+        enabled: true
+      }
+      ws: {
+        enabled: true
+      }
+      summary: "Watch span events"
+    };
+  }
+
+  // Bidi: stream spans bidirectionally.
+  rpc StreamSpans(stream CollectSpanRequest) returns (stream WatchSpanEvent) {
+    option (procframe.options.v1.proc) = {
+      cli_path: {
+        segments: ["stream"]
+      }
+      connect: {
+        enabled: true
+      }
+      ws: {
+        enabled: true
+      }
+      summary: "Bidirectional span streaming"
+    };
+  }
+}
