@@ -1,73 +1,71 @@
 # procframe
 
-A proto-driven typed runtime for CLI frameworks in Go.
+Proto-driven typed handler runtime for Go. Define procedures in Protocol Buffers, generate transport glue, write only the handler.
 
-Define your config and procedures in Protocol Buffers, and `procframe` generates the CLI glue code. You write only the handler.
+One handler serves CLI, Connect (HTTP), and WebSocket — all four RPC shapes (unary, client-stream, server-stream, bidi) through a single generic middleware model.
 
-## Overview
+## Key Features
 
-`procframe` connects two concerns with minimal abstraction:
+- **Proto as single source of truth** — procedure schemas and config defined in `.proto` files
+- **One handler, three transports** — same typed handler runs on CLI, Connect/gRPC, and WebSocket
+- **All four RPC shapes** — unary, client-stream, server-stream, bidirectional streaming
+- **Generic conn-based middleware** — single `Conn` interface with `Receive`/`Send` for all shapes; compose behavior via conn decorators
+- **Code generation** — handler interfaces, CLI command tree, flag parsing, Connect HTTP handlers, WebSocket session handlers, config loading
+- **Human + agent dual interface** — flat flags for humans, `--json` / stdin NDJSON for agents
+- **Structured errors** — canonical error codes mapped to exit codes, Connect codes, WS error frames
+- **stdout/stderr separation** — result data on stdout, diagnostics on stderr
 
-1. **Config**: env / CLI / file → merge → immutable config
-2. **Procedure**: CLI → typed request → handler → typed response
+## Transports
 
-The runtime provides transport-independent abstractions (`Request[T]`, `Response[T]`, `ServerStream[T]`). Handlers return ordinary Go errors; transports map them to structured statuses at the boundary. A protoc plugin (`protoc-gen-procframe-go`) generates CLI command trees, flag parsers, and config loaders from your proto definitions.
+- **CLI** — flags or `--json` for unary/server-stream, stdin NDJSON for client-stream/bidi
+- **Connect** — Connect protocol and gRPC over HTTP (bidi requires HTTP/2)
+- **WebSocket** — JSON session protocol (`open`/`message`/`close` frames)
 
-### Key Features
+All transports support all four RPC shapes (unary, client-stream, server-stream, bidi).
 
-- **Proto as single source of truth** — config and procedure schemas defined in `.proto` files
-- **Code generation** — CLI command tree, flag parsing, config loading, handler interfaces
-- **Transport-independent handlers** — handlers know nothing about CLI, HTTP, or WebSocket
-- **Human + agent dual interface** — flat flags for humans, `--json` raw payload for agents
-- **Schema introspection** — `schema` subcommand for self-describing CLI
-- **Structured errors** — canonical error codes with exit code mapping and retryable hints
-- **stdout/stderr separation** — result data on stdout, logs/help/errors on stderr
+## Installation
 
-## Status
+```bash
+go get github.com/shuymn/procframe
+```
 
-v0.1 — CLI transport only. HTTP, gRPC, and WebSocket transports are planned but not yet implemented.
+Code generation plugin:
 
-Supported handler shapes: **unary** and **server-stream**.
+```bash
+go install github.com/shuymn/procframe/cmd/protoc-gen-procframe-go@latest
+```
 
-## Requirements
+Add to your `buf.gen.yaml`:
+
+```yaml
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: gen
+    opt: paths=source_relative
+  - local: protoc-gen-procframe-go
+    out: gen
+    opt:
+      - paths=source_relative
+      # - config_proto=path/to/config.proto  # default: any file named config.proto
+```
+
+### Requirements
 
 - Go 1.25+
-- [Task](https://taskfile.dev/)
-- [buf](https://buf.build/) (for proto code generation)
-- [lefthook](https://github.com/evilmartians/lefthook) (for Git hooks)
+- [buf](https://buf.build/) or `protoc` (for proto code generation)
 
-## Setup
+## Contributing
 
-```bash
-lefthook install
-```
+Development requires additional tooling:
 
-## Development
+- [Task](https://taskfile.dev/) — task runner (`task check` for full verification)
+- [lefthook](https://github.com/evilmartians/lefthook) — Git hooks (`lefthook install` after clone)
 
 ```bash
-task          # list all available tasks
-task build    # build
-task test     # test with race detection
-task lint     # lint
-task fmt      # format
-task check    # lint + build + test
-```
-
-## Repository Layout
-
-```
-procframe/
-├── cmd/protoc-gen-procframe-go/  # protoc plugin
-├── internal/codegen/             # code generation logic
-├── proto/procframe/options/v1/   # options.proto (library-provided schema DSL)
-├── transport/cli/                # CLI transport runtime
-├── doc.go                        # package documentation
-├── request.go                    # Request[T]
-├── response.go                   # Response[T]
-├── stream.go                     # ServerStream[T]
-├── meta.go                       # Meta (procedure, request ID, session ID)
-├── errors.go                     # Structured error with canonical codes
-└── handler.go                    # UnaryHandler / ServerStreamHandler interfaces
+task              # list all available tasks
+task check        # lint + proto + build + test + tidy
+task test         # test with race detection
 ```
 
 ## License
