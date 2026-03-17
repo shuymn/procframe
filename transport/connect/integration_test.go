@@ -517,3 +517,295 @@ func TestIntegration_ConnectBidiStream(t *testing.T) {
 		}
 	}
 }
+
+// TestIntegration_ConnectUnaryNilResponse verifies that a handler returning
+// nil response produces a CodeInternal Connect error.
+func TestIntegration_ConnectUnaryNilResponse(t *testing.T) {
+	t.Parallel()
+
+	procedure, handler := connecttransport.NewUnaryHandler(
+		"/test.v1.EchoService/Echo",
+		func(_ context.Context, _ *procframe.Request[testv1.EchoRequest]) (*procframe.Response[testv1.EchoResponse], error) {
+			return nil, nil
+		},
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle(procedure, handler)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := connectrpc.NewClient[testv1.EchoRequest, testv1.EchoResponse](
+		http.DefaultClient,
+		srv.URL+procedure,
+	)
+
+	_, err := client.CallUnary(t.Context(), connectrpc.NewRequest(&testv1.EchoRequest{
+		Message: "hello",
+	}))
+	if err == nil {
+		t.Fatal("expected error for nil handler response")
+	}
+	var connectErr *connectrpc.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("expected connect error, got: %v", err)
+	}
+	if connectErr.Code() != connectrpc.CodeInternal {
+		t.Fatalf("want code=internal, got %v", connectErr.Code())
+	}
+}
+
+// TestIntegration_ConnectUnaryNilMsg verifies that a handler returning a
+// response with nil Msg produces a CodeInternal Connect error.
+func TestIntegration_ConnectUnaryNilMsg(t *testing.T) {
+	t.Parallel()
+
+	procedure, handler := connecttransport.NewUnaryHandler(
+		"/test.v1.EchoService/Echo",
+		func(_ context.Context, _ *procframe.Request[testv1.EchoRequest]) (*procframe.Response[testv1.EchoResponse], error) {
+			return &procframe.Response[testv1.EchoResponse]{Msg: nil}, nil
+		},
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle(procedure, handler)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := connectrpc.NewClient[testv1.EchoRequest, testv1.EchoResponse](
+		http.DefaultClient,
+		srv.URL+procedure,
+	)
+
+	_, err := client.CallUnary(t.Context(), connectrpc.NewRequest(&testv1.EchoRequest{
+		Message: "hello",
+	}))
+	if err == nil {
+		t.Fatal("expected error for nil Msg in response")
+	}
+	var connectErr *connectrpc.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("expected connect error, got: %v", err)
+	}
+	if connectErr.Code() != connectrpc.CodeInternal {
+		t.Fatalf("want code=internal, got %v", connectErr.Code())
+	}
+}
+
+// TestIntegration_ConnectServerStreamSend verifies that a server-stream
+// handler returning nil response in Send does not panic.
+func TestIntegration_ConnectServerStreamSend(t *testing.T) {
+	t.Parallel()
+
+	procedure, handler := connecttransport.NewServerStreamHandler(
+		"/test.v1.TickService/Watch",
+		func(_ context.Context, _ *procframe.Request[testv1.TickRequest], stream procframe.ServerStream[testv1.TickResponse]) error {
+			// Send a valid response first.
+			return stream.Send(&procframe.Response[testv1.TickResponse]{
+				Msg: &testv1.TickResponse{Label: "ok", Seq: 1},
+			})
+		},
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle(procedure, handler)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := connectrpc.NewClient[testv1.TickRequest, testv1.TickResponse](
+		http.DefaultClient,
+		srv.URL+procedure,
+	)
+
+	stream, err := client.CallServerStream(t.Context(), connectrpc.NewRequest(&testv1.TickRequest{
+		Label: "test",
+		Count: 1,
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer stream.Close()
+
+	if !stream.Receive() {
+		t.Fatalf("expected first message, got error: %v", stream.Err())
+	}
+	if stream.Msg().Label != "ok" {
+		t.Fatalf("want label=ok, got %q", stream.Msg().Label)
+	}
+}
+
+// TestIntegration_ConnectErrorMapping verifies that error mapping handles
+// all procframe codes and unknown codes without panic.
+func TestIntegration_ConnectErrorMapping(t *testing.T) {
+	t.Parallel()
+
+	allCodes := []procframe.Code{
+		procframe.CodeInvalidArgument,
+		procframe.CodeNotFound,
+		procframe.CodeInternal,
+		procframe.CodeUnauthenticated,
+		procframe.CodeUnavailable,
+		procframe.CodeAlreadyExists,
+		procframe.CodePermissionDenied,
+		procframe.CodeConflict,
+		procframe.Code("unknown_code"),
+		procframe.Code(""),
+	}
+
+	for _, code := range allCodes {
+		t.Run(string(code), func(t *testing.T) {
+			t.Parallel()
+
+			procedure, handler := connecttransport.NewUnaryHandler(
+				"/test.v1.EchoService/Echo",
+				func(_ context.Context, _ *procframe.Request[testv1.EchoRequest]) (*procframe.Response[testv1.EchoResponse], error) {
+					return nil, procframe.NewError(code, "test error for "+string(code))
+				},
+			)
+
+			mux := http.NewServeMux()
+			mux.Handle(procedure, handler)
+			srv := httptest.NewServer(mux)
+			t.Cleanup(srv.Close)
+
+			client := connectrpc.NewClient[testv1.EchoRequest, testv1.EchoResponse](
+				http.DefaultClient,
+				srv.URL+procedure,
+			)
+
+			_, err := client.CallUnary(t.Context(), connectrpc.NewRequest(&testv1.EchoRequest{
+				Message: "hello",
+			}))
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			var connectErr *connectrpc.Error
+			if !errors.As(err, &connectErr) {
+				t.Fatalf("expected connect error, got: %v", err)
+			}
+		})
+	}
+}
+
+// TestIntegration_ConnectErrorMapperFallback verifies that a custom ErrorMapper
+// that returns (_, false) falls through to CodeInternal.
+func TestIntegration_ConnectErrorMapperFallback(t *testing.T) {
+	t.Parallel()
+
+	procedure, handler := connecttransport.NewUnaryHandler(
+		"/test.v1.EchoService/Echo",
+		func(_ context.Context, _ *procframe.Request[testv1.EchoRequest]) (*procframe.Response[testv1.EchoResponse], error) {
+			return nil, errors.New("unmapped error")
+		},
+		connecttransport.WithErrorMapper(func(_ error) (procframe.Status, bool) {
+			return procframe.Status{}, false // decline mapping
+		}),
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle(procedure, handler)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := connectrpc.NewClient[testv1.EchoRequest, testv1.EchoResponse](
+		http.DefaultClient,
+		srv.URL+procedure,
+	)
+
+	_, err := client.CallUnary(t.Context(), connectrpc.NewRequest(&testv1.EchoRequest{
+		Message: "hello",
+	}))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	var connectErr *connectrpc.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("expected connect error, got: %v", err)
+	}
+	if connectErr.Code() != connectrpc.CodeInternal {
+		t.Fatalf("want code=internal for unmapped error, got %v", connectErr.Code())
+	}
+}
+
+// TestIntegration_ConnectClientStreamEmpty verifies that a client-stream
+// handler with zero messages produces a valid response.
+func TestIntegration_ConnectClientStreamEmpty(t *testing.T) {
+	t.Parallel()
+
+	procedure, handler := connecttransport.NewClientStreamHandler(
+		"/test.v1.FourShapeService/Collect",
+		func(_ context.Context, stream procframe.ClientStream[testv1.CollectRequest]) (*procframe.Response[testv1.CollectResponse], error) {
+			var count int32
+			for {
+				_, err := stream.Receive()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					return nil, err
+				}
+				count++
+			}
+			return &procframe.Response[testv1.CollectResponse]{
+				Msg: &testv1.CollectResponse{Count: count},
+			}, nil
+		},
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle(procedure, handler)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := connectrpc.NewClient[testv1.CollectRequest, testv1.CollectResponse](
+		http.DefaultClient,
+		srv.URL+procedure,
+	)
+
+	stream := client.CallClientStream(t.Context())
+	// Send zero messages, immediately close.
+	resp, err := stream.CloseAndReceive()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Msg.Count != 0 {
+		t.Fatalf("want count=0, got %d", resp.Msg.Count)
+	}
+}
+
+// TestIntegration_ConnectErrorNoInternalLeak verifies that error
+// messages from Connect don't expose internal framework details.
+func TestIntegration_ConnectErrorNoInternalLeak(t *testing.T) {
+	t.Parallel()
+
+	procedure, handler := connecttransport.NewUnaryHandler(
+		"/test.v1.EchoService/Echo",
+		func(_ context.Context, _ *procframe.Request[testv1.EchoRequest]) (*procframe.Response[testv1.EchoResponse], error) {
+			return nil, procframe.NewError(procframe.CodePermissionDenied, "access denied")
+		},
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle(procedure, handler)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := connectrpc.NewClient[testv1.EchoRequest, testv1.EchoResponse](
+		http.DefaultClient,
+		srv.URL+procedure,
+	)
+
+	_, err := client.CallUnary(t.Context(), connectrpc.NewRequest(&testv1.EchoRequest{
+		Message: "hello",
+	}))
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	msg := err.Error()
+	for _, leak := range []string{".go:", "goroutine", "runtime.", "panic", "stack"} {
+		if strings.Contains(msg, leak) {
+			t.Fatalf("error message leaks internal: %q found in %q", leak, msg)
+		}
+	}
+}

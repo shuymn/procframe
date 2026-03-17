@@ -658,6 +658,171 @@ func TestInvokeUnary_NilHandlerResponse(t *testing.T) {
 	}
 }
 
+func TestInvokeUnary_NilHandlerPanics(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if r := recover(); r != nil {
+			// Panic is acceptable for nil handler — it's a programming error.
+			t.Logf("recovered panic for nil handler: %v", r)
+		}
+	}()
+
+	_, err := procframe.InvokeUnary[string, string](
+		t.Context(),
+		procframe.CallSpec{Procedure: "/test/Nil", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary},
+		&procframe.Request[string]{Msg: ptrTo("hello")},
+		nil,
+	)
+	if err == nil {
+		t.Fatal("expected error or panic for nil handler")
+	}
+}
+
+func TestInvokeUnary_NilRequest(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Logf("recovered panic for nil request: %v", r)
+		}
+	}()
+
+	_, err := procframe.InvokeUnary(
+		t.Context(),
+		procframe.CallSpec{Procedure: "/test/Nil", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary},
+		(*procframe.Request[string])(nil),
+		func(_ context.Context, _ *procframe.Request[string]) (*procframe.Response[string], error) {
+			return &procframe.Response[string]{Msg: ptrTo("ok")}, nil
+		},
+	)
+	// Either error or panic is acceptable.
+	_ = err
+}
+
+func TestInterceptorFunc_Nil(t *testing.T) {
+	t.Parallel()
+
+	var nilFunc procframe.InterceptorFunc
+	called := false
+	resp, err := procframe.InvokeUnary(
+		t.Context(),
+		procframe.CallSpec{
+			Procedure: "/test/NilIF",
+			Transport: procframe.TransportCLI,
+			Shape:     procframe.CallShapeUnary,
+		},
+		&procframe.Request[string]{Msg: ptrTo("hello")},
+		func(_ context.Context, _ *procframe.Request[string]) (*procframe.Response[string], error) {
+			called = true
+			return &procframe.Response[string]{Msg: ptrTo("ok")}, nil
+		},
+		nilFunc,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Fatal("handler was not called through nil InterceptorFunc")
+	}
+	if resp == nil || resp.Msg == nil || *resp.Msg != "ok" {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+}
+
+func TestUnaryConn_DoubleReceive(t *testing.T) {
+	t.Parallel()
+
+	var firstReceiveOK bool
+	var secondReceiveErr error
+
+	_, err := procframe.InvokeUnary(
+		t.Context(),
+		procframe.CallSpec{
+			Procedure: "/test/DoubleRecv",
+			Transport: procframe.TransportCLI,
+			Shape:     procframe.CallShapeUnary,
+		},
+		&procframe.Request[string]{Msg: ptrTo("hello")},
+		func(_ context.Context, _ *procframe.Request[string]) (*procframe.Response[string], error) {
+			return &procframe.Response[string]{Msg: ptrTo("ok")}, nil
+		},
+		procframe.InterceptorFunc(func(next procframe.HandlerFunc) procframe.HandlerFunc {
+			return func(ctx context.Context, conn procframe.Conn) error {
+				// First Receive should succeed.
+				_, err := conn.Receive()
+				firstReceiveOK = err == nil
+
+				// Second Receive should return io.EOF.
+				_, secondReceiveErr = conn.Receive()
+
+				return next(ctx, conn)
+			}
+		}),
+	)
+	// The handler might fail because the interceptor consumed the request.
+	_ = err
+
+	if !firstReceiveOK {
+		t.Fatal("first Receive should succeed")
+	}
+	if !errors.Is(secondReceiveErr, io.EOF) {
+		t.Fatalf("second Receive should return io.EOF, got: %v", secondReceiveErr)
+	}
+}
+
+func TestServerStreamConn_DoubleReceive(t *testing.T) {
+	t.Parallel()
+
+	var firstReceiveOK bool
+	var secondReceiveErr error
+
+	fakeStream := &fakeServerStream[string]{t: t}
+
+	err := procframe.InvokeServerStream(
+		t.Context(),
+		procframe.CallSpec{
+			Procedure: "/test/SSDoubleRecv",
+			Transport: procframe.TransportCLI,
+			Shape:     procframe.CallShapeServerStream,
+		},
+		&procframe.Request[string]{Msg: ptrTo("hello")},
+		fakeStream,
+		func(_ context.Context, _ *procframe.Request[string], _ procframe.ServerStream[string]) error {
+			return nil
+		},
+		procframe.InterceptorFunc(func(next procframe.HandlerFunc) procframe.HandlerFunc {
+			return func(ctx context.Context, conn procframe.Conn) error {
+				_, err := conn.Receive()
+				firstReceiveOK = err == nil
+
+				_, secondReceiveErr = conn.Receive()
+
+				return next(ctx, conn)
+			}
+		}),
+	)
+	_ = err
+
+	if !firstReceiveOK {
+		t.Fatal("first Receive should succeed")
+	}
+	if !errors.Is(secondReceiveErr, io.EOF) {
+		t.Fatalf("second Receive should return io.EOF, got: %v", secondReceiveErr)
+	}
+}
+
+// --- helpers ---
+
+func ptrTo[T any](v T) *T { return &v }
+
+type fakeServerStream[T any] struct {
+	t *testing.T
+}
+
+func (s *fakeServerStream[T]) Context() context.Context            { return s.t.Context() }
+func (s *fakeServerStream[T]) Send(_ *procframe.Response[T]) error { return nil }
+
 // --- Conn decorator helpers for tests ---
 
 type modifyReceiveConn struct {

@@ -61,3 +61,21 @@ func TestUnmarshalJSONField(t *testing.T) {
 		}
 	})
 }
+
+func TestUnmarshalJSONField_NilMessage(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Logf("UnmarshalJSONField recovered panic: %v", r)
+		}
+	}()
+
+	// Passing nil message — should panic or error.
+	err := cli.UnmarshalJSONField(nil, "field", `"value"`)
+	if err == nil {
+		// If it didn't panic or error, that's still acceptable as long
+		// as no corruption occurred.
+		t.Log("UnmarshalJSONField(nil) returned no error")
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -637,5 +638,60 @@ func TestRunner_WithNameEmpty(t *testing.T) {
 	}
 	if err.Error() != "no command specified" {
 		t.Fatalf("want generic error without program name, got: %v", err)
+	}
+}
+
+func TestRunner_NilArgs(t *testing.T) {
+	t.Parallel()
+
+	root := &cli.Node{
+		Segment:  "app",
+		Children: map[string]*cli.Node{},
+	}
+
+	r := cli.NewRunner(root, cli.WithName("test"), cli.WithStderr(io.Discard))
+
+	err := r.Run(t.Context(), nil)
+	if err == nil {
+		t.Fatal("expected error for nil args")
+	}
+}
+
+func TestRunner_SpecialCharactersInArgs(t *testing.T) {
+	t.Parallel()
+
+	var captured []string
+	root := &cli.Node{
+		Segment: "app",
+		Children: map[string]*cli.Node{
+			"echo": {
+				Segment: "echo",
+				Run: func(_ context.Context, args []string, _ io.Writer) error {
+					captured = args
+					return nil
+				},
+			},
+		},
+	}
+
+	injections := [][]string{
+		{"echo", "; rm -rf /"},
+		{"echo", "$(whoami)"},
+		{"echo", "`id`"},
+		{"echo", "hello\x00world"},
+		{"echo", strings.Repeat("A", 100000)},
+		{"echo", "--json", `{"__proto__":{"admin":true}}`},
+	}
+
+	for i, args := range injections {
+		t.Run(fmt.Sprintf("injection_%d", i), func(t *testing.T) {
+			r := cli.NewRunner(root, cli.WithName("test"), cli.WithStdout(io.Discard), cli.WithStderr(io.Discard))
+			err := r.Run(t.Context(), args)
+			if err != nil {
+				// Error is acceptable — the point is no panic.
+				return
+			}
+			_ = captured
+		})
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/shuymn/procframe"
@@ -216,6 +217,49 @@ func TestStatusOf_NonStatusError(t *testing.T) {
 	_, ok := procframe.StatusOf(nonStatusError{})
 	if ok {
 		t.Fatal("StatusOf returned true for non-status error")
+	}
+}
+
+func TestStatusOf_NilError(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("StatusOf(nil) panicked: %v", r)
+		}
+	}()
+
+	_, ok := procframe.StatusOf(nil)
+	if ok {
+		t.Fatal("StatusOf(nil) should return false")
+	}
+}
+
+func TestStatusError_ErrorNoInternalLeak(t *testing.T) {
+	t.Parallel()
+
+	err := procframe.NewError(procframe.CodeInternal, "user-visible message")
+	msg := err.Error()
+
+	if msg != "internal: user-visible message" {
+		t.Fatalf("unexpected error format: %q", msg)
+	}
+
+	// Verify no stack trace or file paths.
+	for _, leak := range []string{".go:", "goroutine", "runtime.", "panic"} {
+		if strings.Contains(msg, leak) {
+			t.Fatalf("error message leaks internal: %q found in %q", leak, msg)
+		}
+	}
+}
+
+func TestStatusError_UnknownCode(t *testing.T) {
+	t.Parallel()
+
+	err := procframe.NewError(procframe.Code("unknown_code"), "test")
+	msg := err.Error()
+	if msg != "unknown_code: test" {
+		t.Fatalf("unexpected error format for unknown code: %q", msg)
 	}
 }
 

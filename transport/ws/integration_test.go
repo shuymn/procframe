@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1116,5 +1117,545 @@ func TestIntegration_WSMixedShapes(t *testing.T) {
 	}
 	if !gotClose["u1"] || !gotClose["cs1"] {
 		t.Fatalf("missing closes: %v", gotClose)
+	}
+}
+
+// ============================================================
+// Integration tests — Adversarial: Empty/null values
+// ============================================================
+
+// TestIntegration_WSEmptySessionID verifies that an open frame with an empty
+// session ID does not panic and returns an appropriate error or is ignored.
+func TestIntegration_WSEmptySessionID(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			_ context.Context,
+			req *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			return &procframe.Response[testv1.EchoResponse]{
+				Msg: &testv1.EchoResponse{Message: req.Msg.Message},
+			}, nil
+		},
+	)
+
+	conn, ctx := startWSServer(t, s)
+
+	// Open with empty session ID.
+	sendOpen(t, ctx, conn, "", "/test.v1.EchoService/Echo", "unary")
+	sendMessage(t, ctx, conn, "", json.RawMessage(`{"message":"hello"}`))
+	sendClose(t, ctx, conn, "")
+
+	// Should not panic; expect a response (message+close or error).
+	out := readFrame(t, ctx, conn)
+	if out.Type != "message" && out.Type != "error" {
+		t.Fatalf("want type=message or type=error, got %q", out.Type)
+	}
+}
+
+// TestIntegration_WSEmptyProcedure verifies that an open frame with an empty
+// procedure name returns a not_found error.
+func TestIntegration_WSEmptyProcedure(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			_ context.Context,
+			_ *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			return &procframe.Response[testv1.EchoResponse]{
+				Msg: &testv1.EchoResponse{Message: "ok"},
+			}, nil
+		},
+	)
+
+	conn, ctx := startWSServer(t, s)
+
+	sendOpen(t, ctx, conn, "empty-proc-1", "", "unary")
+
+	out := readFrame(t, ctx, conn)
+	if out.Type != "error" {
+		t.Fatalf("want type=error, got %q", out.Type)
+	}
+	if out.Error == nil {
+		t.Fatal("expected error frame")
+	}
+	if out.Error.Code != string(procframe.CodeNotFound) {
+		t.Fatalf("want code=%s, got %s", procframe.CodeNotFound, out.Error.Code)
+	}
+}
+
+// TestIntegration_WSNilPayload verifies that sending a message frame with a
+// nil/empty payload to a unary handler returns an appropriate error.
+func TestIntegration_WSNilPayload(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			_ context.Context,
+			req *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			return &procframe.Response[testv1.EchoResponse]{
+				Msg: &testv1.EchoResponse{Message: req.Msg.Message},
+			}, nil
+		},
+	)
+
+	conn, ctx := startWSServer(t, s)
+
+	sendOpen(t, ctx, conn, "nil-1", "/test.v1.EchoService/Echo", "unary")
+	// Send nil/empty payload.
+	sendMessage(t, ctx, conn, "nil-1", nil)
+	sendClose(t, ctx, conn, "nil-1")
+
+	out := readFrame(t, ctx, conn)
+	if out.Type != "error" && out.Type != "message" {
+		t.Fatalf("want type=error or type=message, got %q", out.Type)
+	}
+	// If error, should not panic and should have a valid error code.
+	if out.Type == "error" && out.Error != nil && out.Error.Code == "" {
+		t.Fatal("error frame has empty code")
+	}
+}
+
+// TestIntegration_WSEmptyShape verifies that an open frame with an empty shape
+// returns a shape mismatch error.
+func TestIntegration_WSEmptyShape(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			_ context.Context,
+			_ *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			return &procframe.Response[testv1.EchoResponse]{
+				Msg: &testv1.EchoResponse{Message: "ok"},
+			}, nil
+		},
+	)
+
+	conn, ctx := startWSServer(t, s)
+
+	sendOpen(t, ctx, conn, "shape-1", "/test.v1.EchoService/Echo", "")
+
+	out := readFrame(t, ctx, conn)
+	if out.Type != "error" {
+		t.Fatalf("want type=error, got %q", out.Type)
+	}
+	if out.Error == nil {
+		t.Fatal("expected error frame")
+	}
+	if out.Error.Code != string(procframe.CodeInvalidArgument) {
+		t.Fatalf("want code=%s, got %s", procframe.CodeInvalidArgument, out.Error.Code)
+	}
+}
+
+// TestIntegration_WSMessageNonexistentSession verifies that sending a message
+// to a non-existent session returns an error frame.
+func TestIntegration_WSMessageNonexistentSession(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			_ context.Context,
+			_ *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			return &procframe.Response[testv1.EchoResponse]{
+				Msg: &testv1.EchoResponse{Message: "ok"},
+			}, nil
+		},
+	)
+
+	conn, ctx := startWSServer(t, s)
+
+	// Send message without opening a session.
+	sendMessage(t, ctx, conn, "ghost-session", json.RawMessage(`{"message":"hello"}`))
+
+	out := readFrame(t, ctx, conn)
+	if out.Type != "error" {
+		t.Fatalf("want type=error, got %q", out.Type)
+	}
+	if out.Error == nil {
+		t.Fatal("expected error frame")
+	}
+	if out.Error.Code != string(procframe.CodeNotFound) {
+		t.Fatalf("want code=%s, got %s", procframe.CodeNotFound, out.Error.Code)
+	}
+}
+
+// TestIntegration_WSDuplicateSessionID verifies that opening two sessions with
+// the same ID returns an already_exists error.
+func TestIntegration_WSDuplicateSessionID(t *testing.T) {
+	t.Parallel()
+
+	started := make(chan struct{})
+
+	s := ws.NewServer()
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			ctx context.Context,
+			_ *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			started <- struct{}{}
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	)
+
+	conn, ctx := startWSServer(t, s)
+
+	// Open first session.
+	sendOpen(t, ctx, conn, "dup-1", "/test.v1.EchoService/Echo", "unary")
+	sendMessage(t, ctx, conn, "dup-1", json.RawMessage(`{"message":"hello"}`))
+	sendClose(t, ctx, conn, "dup-1")
+
+	// Wait for handler to start.
+	<-started
+
+	// Try to open a second session with the same ID while the first is still running.
+	sendOpen(t, ctx, conn, "dup-1", "/test.v1.EchoService/Echo", "unary")
+
+	out := readFrame(t, ctx, conn)
+	if out.Type != "error" {
+		t.Fatalf("want type=error, got %q", out.Type)
+	}
+	if out.Error == nil {
+		t.Fatal("expected error frame")
+	}
+	if out.Error.Code != string(procframe.CodeAlreadyExists) {
+		t.Fatalf("want code=%s, got %s", procframe.CodeAlreadyExists, out.Error.Code)
+	}
+}
+
+// ============================================================
+// Integration tests — Adversarial: Injection
+// ============================================================
+
+// TestIntegration_WSMalformedJSON verifies that completely malformed JSON
+// frames are safely discarded without panic.
+func TestIntegration_WSMalformedJSON(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			_ context.Context,
+			req *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			return &procframe.Response[testv1.EchoResponse]{
+				Msg: &testv1.EchoResponse{Message: req.Msg.Message},
+			}, nil
+		},
+	)
+
+	conn, ctx := startWSServer(t, s)
+
+	// Send malformed JSON.
+	malformed := []byte(`{not valid json!!!}`)
+	if err := conn.Write(ctx, websocket.MessageText, malformed); err != nil {
+		t.Fatalf("write malformed: %v", err)
+	}
+
+	// Server should silently discard the malformed frame.
+	// Verify by sending a valid request afterwards.
+	sendOpen(t, ctx, conn, "valid-1", "/test.v1.EchoService/Echo", "unary")
+	sendMessage(t, ctx, conn, "valid-1", json.RawMessage(`{"message":"ok"}`))
+	sendClose(t, ctx, conn, "valid-1")
+
+	out := readFrame(t, ctx, conn)
+	if out.Type != "message" {
+		t.Fatalf("want type=message after malformed frame, got %q (error: %+v)", out.Type, out.Error)
+	}
+}
+
+// TestIntegration_WSSpecialCharactersInProcedure verifies that procedure names
+// with path traversal or injection-like characters are handled safely.
+func TestIntegration_WSSpecialCharactersInProcedure(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			_ context.Context,
+			_ *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			return &procframe.Response[testv1.EchoResponse]{
+				Msg: &testv1.EchoResponse{Message: "ok"},
+			}, nil
+		},
+	)
+
+	conn, ctx := startWSServer(t, s)
+
+	payloads := []string{
+		"/../../../etc/passwd",
+		"/test.v1.EchoService/Echo; DROP TABLE users;--",
+		"/test.v1.EchoService/Echo\x00",
+		"<script>alert(1)</script>",
+		strings.Repeat("A", 10000),
+	}
+
+	for i, proc := range payloads {
+		id := json.RawMessage([]byte(`"inj-` + string(rune('0'+i)) + `"`))
+		_ = id
+		sendOpen(t, ctx, conn, "inj-"+string(rune('0'+i)), proc, "unary")
+
+		out := readFrame(t, ctx, conn)
+		if out.Type != "error" {
+			t.Fatalf("payload %d: want type=error for injected procedure, got %q", i, out.Type)
+		}
+		if out.Error == nil {
+			t.Fatalf("payload %d: expected error frame", i)
+		}
+		// Error code should be not_found (no matching handler).
+		if out.Error.Code != string(procframe.CodeNotFound) {
+			t.Fatalf("payload %d: want code=%s, got %s", i, procframe.CodeNotFound, out.Error.Code)
+		}
+	}
+}
+
+// TestIntegration_WSMalformedPayload verifies that sending a payload
+// that cannot be unmarshaled into a proto message returns invalid_argument.
+func TestIntegration_WSMalformedPayload(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			_ context.Context,
+			req *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			return &procframe.Response[testv1.EchoResponse]{
+				Msg: &testv1.EchoResponse{Message: req.Msg.Message},
+			}, nil
+		},
+	)
+
+	conn, ctx := startWSServer(t, s)
+
+	payloads := []json.RawMessage{
+		json.RawMessage(`{"unknownField123": "value"}`),
+		json.RawMessage(`{"message": 12345}`),
+	}
+
+	for i, payload := range payloads {
+		id := "bad-" + string(rune('0'+i))
+		sendOpen(t, ctx, conn, id, "/test.v1.EchoService/Echo", "unary")
+		sendMessage(t, ctx, conn, id, payload)
+		sendClose(t, ctx, conn, id)
+
+		out := readFrame(t, ctx, conn)
+		if out.Type != "error" {
+			t.Fatalf("payload %d: want type=error, got %q", i, out.Type)
+		}
+		if out.Error == nil {
+			t.Fatalf("payload %d: expected error frame", i)
+		}
+		if out.Error.Code != string(procframe.CodeInvalidArgument) {
+			t.Fatalf("payload %d: want code=%s, got %s", i, procframe.CodeInvalidArgument, out.Error.Code)
+		}
+	}
+
+	// Send a completely non-JSON payload directly via raw write.
+	// This tests the frame-level JSON parsing, not proto unmarshal.
+	sendOpen(t, ctx, conn, "bad-raw", "/test.v1.EchoService/Echo", "unary")
+	rawFrame := []byte(`{"type":"message","id":"bad-raw","payload":not-valid}`)
+	if err := conn.Write(ctx, websocket.MessageText, rawFrame); err != nil {
+		t.Fatalf("write raw frame: %v", err)
+	}
+	sendClose(t, ctx, conn, "bad-raw")
+
+	// The server should discard the malformed frame and the session should
+	// receive the close, resulting in a "session closed without request" error.
+	out := readFrame(t, ctx, conn)
+	if out.Type != "error" {
+		t.Fatalf("raw payload: want type=error, got %q", out.Type)
+	}
+}
+
+// ============================================================
+// Integration tests — Adversarial: TOCTOU / Race conditions
+// ============================================================
+
+// TestIntegration_WSConcurrentSessionsRace exercises concurrent session
+// lifecycle operations to detect data races. This test should be run
+// with -race to verify thread safety.
+func TestIntegration_WSConcurrentSessionsRace(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer(ws.WithMaxInflight(100))
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			_ context.Context,
+			req *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			return &procframe.Response[testv1.EchoResponse]{
+				Msg: &testv1.EchoResponse{Message: req.Msg.Message},
+			}, nil
+		},
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle("/ws", s)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	ctx := t.Context()
+	wsURL := "ws" + srv.URL[len("http"):] + "/ws"
+
+	const numClients = 5
+	const sessionsPerClient = 10
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, numClients)
+
+	for c := range numClients {
+		wg.Add(1)
+		go func(clientID int) {
+			defer wg.Done()
+
+			//nolint:bodyclose // coder/websocket manages resp.Body internally
+			conn, _, err := websocket.Dial(ctx, wsURL, nil)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			defer conn.CloseNow() //nolint:errcheck // best-effort cleanup
+
+			for s := range sessionsPerClient {
+				id := json.Number(
+					string(rune('A'+clientID)), //nolint:gosec // G115: bounded by test constants
+				) + json.Number(
+					string(rune('0'+s)),
+				)
+				sessionID := string(id)
+				sendOpen(t, ctx, conn, sessionID, "/test.v1.EchoService/Echo", "unary")
+				sendMessage(t, ctx, conn, sessionID, json.RawMessage(`{"message":"test"}`))
+				sendClose(t, ctx, conn, sessionID)
+			}
+
+			// Read all responses.
+			for range sessionsPerClient * 2 { // message + close per session
+				readCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				_, _, rErr := conn.Read(readCtx)
+				cancel()
+				if rErr != nil {
+					errCh <- rErr
+					return
+				}
+			}
+		}(c)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		t.Errorf("concurrent session error: %v", err)
+	}
+}
+
+// TestIntegration_WSBidiRace exercises concurrent Receive/Send on a bidi
+// stream to detect data races. Must be run with -race.
+func TestIntegration_WSBidiRace(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+
+	ws.HandleBidi(s, "/test.v1.FourShapeService/Chat",
+		func(
+			_ context.Context,
+			stream procframe.BidiStream[testv1.ChatMessage, testv1.ChatReply],
+		) error {
+			for {
+				req, err := stream.Receive()
+				if errors.Is(err, io.EOF) {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				if err := stream.Send(&procframe.Response[testv1.ChatReply]{
+					Msg: &testv1.ChatReply{Text: "echo:" + req.Msg.Text},
+				}); err != nil {
+					return err
+				}
+			}
+		},
+	)
+
+	conn, ctx := startWSServer(t, s)
+
+	sendOpen(t, ctx, conn, "bidi-race", "/test.v1.FourShapeService/Chat", "bidi")
+
+	const msgCount = 20
+	for i := range msgCount {
+		msg := json.RawMessage(`{"text":"msg-` + string(rune('A'+i%26)) + `"}`)
+		sendMessage(t, ctx, conn, "bidi-race", msg)
+	}
+
+	// Read responses for all sent messages.
+	for range msgCount {
+		out := readFrame(t, ctx, conn)
+		if out.Type != "message" {
+			t.Fatalf("want type=message, got %q (error: %+v)", out.Type, out.Error)
+		}
+	}
+
+	sendClose(t, ctx, conn, "bidi-race")
+
+	closeFrame := readFrame(t, ctx, conn)
+	if closeFrame.Type != "close" {
+		t.Fatalf("want type=close, got %q", closeFrame.Type)
+	}
+}
+
+// TestIntegration_WSRapidOpenClose exercises rapid session open and immediate
+// close to probe for race conditions in session lifecycle management.
+func TestIntegration_WSRapidOpenClose(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer(ws.WithMaxInflight(100))
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			_ context.Context,
+			req *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			return &procframe.Response[testv1.EchoResponse]{
+				Msg: &testv1.EchoResponse{Message: req.Msg.Message},
+			}, nil
+		},
+	)
+
+	conn, ctx := startWSServer(t, s)
+
+	const iterations = 50
+	for i := range iterations {
+		id := "rapid-" + string(rune('A'+i/26)) + string(rune('a'+i%26))
+		sendOpen(t, ctx, conn, id, "/test.v1.EchoService/Echo", "unary")
+		sendMessage(t, ctx, conn, id, json.RawMessage(`{"message":"test"}`))
+		sendClose(t, ctx, conn, id)
+	}
+
+	// Read all responses.
+	responded := 0
+	readCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	for responded < iterations*2 {
+		_, _, err := conn.Read(readCtx)
+		if err != nil {
+			break
+		}
+		responded++
+	}
+
+	if responded < iterations {
+		t.Fatalf("expected at least %d responses, got %d", iterations, responded)
 	}
 }

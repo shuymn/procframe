@@ -3,6 +3,7 @@ package cli_test
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/shuymn/procframe"
@@ -110,4 +111,28 @@ func TestFormatErrorJSON_Retryable(t *testing.T) {
 	if !got.Error.Retryable {
 		t.Fatal("want retryable=true")
 	}
+}
+
+func TestFormatErrorJSON_BrokenWriter(t *testing.T) {
+	t.Parallel()
+
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("FormatErrorJSON panicked: %v", r)
+		}
+	}()
+
+	err := cli.FormatErrorJSON(&brokenWriter{}, procframe.Status{
+		Code:    procframe.CodeInternal,
+		Message: "test error",
+	})
+	if err == nil {
+		t.Fatal("expected error for broken writer")
+	}
+}
+
+type brokenWriter struct{}
+
+func (w *brokenWriter) Write(_ []byte) (int, error) {
+	return 0, fmt.Errorf("broken writer")
 }

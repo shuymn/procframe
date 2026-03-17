@@ -585,3 +585,211 @@ func TestGeneratedConfigLoad(t *testing.T) {
 		}
 	})
 }
+
+// TestLoad_EmptyArgv verifies that config.Load with empty argv
+// does not panic and either returns a valid config or an error.
+func TestLoad_EmptyArgv(t *testing.T) {
+	t.Setenv("API_TOKEN", "env-token")
+
+	cfg, rest, err := config.Load[testv1.RuntimeConfig]([]string{})
+	if err != nil {
+		// Error is acceptable (e.g. missing required fields).
+		return
+	}
+	if cfg == nil {
+		t.Fatal("Load returned nil config without error")
+	}
+	if rest == nil {
+		// nil rest is acceptable for empty argv.
+		return
+	}
+	if len(rest) != 0 {
+		t.Fatalf("want empty rest for empty argv, got %v", rest)
+	}
+}
+
+// TestLoad_NilArgv verifies that config.Load with nil argv
+// does not panic.
+func TestLoad_NilArgv(t *testing.T) {
+	t.Setenv("API_TOKEN", "env-token")
+
+	cfg, _, err := config.Load[testv1.RuntimeConfig](nil)
+	if err != nil {
+		return // Error is acceptable.
+	}
+	if cfg == nil {
+		t.Fatal("Load returned nil config without error")
+	}
+}
+
+// TestMergeJSONFile_NilDestination verifies that MergeJSONFile
+// with a nil destination returns an error and does not panic.
+func TestMergeJSONFile_NilDestination(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{}`), 0o600); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	_, err := config.MergeJSONFile(path, nil)
+	if err == nil {
+		t.Fatal("expected error for nil destination")
+	}
+	if !strings.Contains(err.Error(), "nil") {
+		t.Fatalf("want nil-related error, got: %v", err)
+	}
+}
+
+// TestApplyEnv_NilLookup verifies that ApplyEnv with nil
+// lookup function returns an error.
+func TestApplyEnv_NilLookup(t *testing.T) {
+	t.Parallel()
+
+	err := config.ApplyEnv(nil, "KEY", func(string) error { return nil })
+	if err == nil {
+		t.Fatal("expected error for nil lookup")
+	}
+}
+
+// TestApplyEnv_NilSetter verifies that ApplyEnv with nil
+// setter function returns an error.
+func TestApplyEnv_NilSetter(t *testing.T) {
+	t.Parallel()
+
+	err := config.ApplyEnv(os.LookupEnv, "KEY", nil)
+	if err == nil {
+		t.Fatal("expected error for nil setter")
+	}
+}
+
+// TestApplyEnv_EmptyEnvName verifies that ApplyEnv with
+// empty env name is a no-op.
+func TestApplyEnv_EmptyEnvName(t *testing.T) {
+	t.Parallel()
+
+	called := false
+	err := config.ApplyEnv(os.LookupEnv, "", func(string) error {
+		called = true
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if called {
+		t.Fatal("setter should not be called for empty env name")
+	}
+}
+
+// TestParseBootstrapArgs_EmptyFlagName verifies that a BootstrapSpec
+// with an empty flag name is rejected.
+func TestParseBootstrapArgs_EmptyFlagName(t *testing.T) {
+	t.Parallel()
+
+	_, err := config.ParseBootstrapArgs(
+		[]string{"--", "value"},
+		[]*config.BootstrapSpec{{Flag: ""}},
+	)
+	if err == nil {
+		t.Fatal("expected error for empty flag name")
+	}
+	if !strings.Contains(err.Error(), "must not be empty") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestLoad_ConfigFilePathTraversal verifies that path traversal
+// sequences in config file paths are handled by the OS and do not cause
+// unexpected behavior. Since config file paths are user-provided argv
+// values, the user already has filesystem access; this test verifies
+// that the error is clean and non-panicking.
+func TestLoad_ConfigFilePathTraversal(t *testing.T) {
+	t.Setenv("API_TOKEN", "env-token")
+
+	// Attempt path traversal.
+	traversalPaths := []string{
+		"../../../etc/passwd",
+		"/etc/passwd",
+		"./../../nonexistent",
+		string([]byte{'.', '.', '/', '.', '.', '/', 0x00, 'e', 't', 'c'}),
+	}
+
+	for _, path := range traversalPaths {
+		_, _, err := config.Load[testv1.RuntimeConfig]([]string{
+			"--config", path, "echo",
+		})
+		if err == nil {
+			// If the file doesn't exist or is not valid JSON, Load should
+			// return an error. If it happens to be valid JSON (e.g. /etc/passwd
+			// doesn't usually exist as valid JSON), that's the OS's job.
+			t.Logf("path %q: Load returned no error (file may not exist or may be valid)", path)
+			continue
+		}
+		// Verify error is clean and doesn't panic.
+		if strings.Contains(err.Error(), "panic") {
+			t.Fatalf("path %q: error contains panic: %v", path, err)
+		}
+	}
+}
+
+// TestLoad_MalformedJSONConfigFile verifies that a config file with
+// malformed JSON returns a clean error.
+func TestLoad_MalformedJSONConfigFile(t *testing.T) {
+	t.Setenv("API_TOKEN", "env-token")
+
+	malformedCases := []struct {
+		name    string
+		content string
+	}{
+		{"empty_file", ""},
+		{"not_json", "this is not json"},
+		{"truncated_json", `{"serviceName": "test`},
+		{"array_not_object", `["a", "b", "c"]`},
+		{"nested_bomb", `{"serviceName": ` + strings.Repeat(`{"a":`, 100) + `"x"` + strings.Repeat(`}`, 100) + `}`},
+	}
+
+	for _, tc := range malformedCases {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(path, []byte(tc.content), 0o600); err != nil {
+				t.Fatalf("write config file: %v", err)
+			}
+
+			_, _, err := config.Load[testv1.RuntimeConfig]([]string{
+				"--config", path, "echo",
+			})
+			if err == nil {
+				t.Fatalf("expected error for malformed JSON: %s", tc.name)
+			}
+		})
+	}
+}
+
+// TestParseBootstrapArgs_FlagNameInjection verifies that bootstrap flag names
+// with special characters are rejected.
+func TestParseBootstrapArgs_FlagNameInjection(t *testing.T) {
+	t.Parallel()
+
+	injectionCases := []struct {
+		name string
+		flag string
+	}{
+		{"with_prefix", "--flag"},
+		{"with_equals", "flag=value"},
+		{"empty", ""},
+	}
+
+	for _, tc := range injectionCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := config.ParseBootstrapArgs(
+				[]string{"--" + tc.flag, "value"},
+				[]*config.BootstrapSpec{{Flag: tc.flag}},
+			)
+			if err == nil {
+				t.Fatalf("expected error for injected flag %q", tc.flag)
+			}
+		})
+	}
+}

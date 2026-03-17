@@ -2,6 +2,8 @@ package cli_test
 
 import (
 	"flag"
+	"fmt"
+	"math"
 	"testing"
 
 	"github.com/shuymn/procframe/transport/cli"
@@ -43,6 +45,24 @@ func TestInt32Value(t *testing.T) {
 		fv := cli.NewInt32Value(&v)
 		if err := fv.Set("2147483648"); err == nil {
 			t.Fatal("expected error for int32 overflow")
+		}
+	})
+
+	t.Run("underflow", func(t *testing.T) {
+		t.Parallel()
+		var v int32
+		fv := cli.NewInt32Value(&v)
+		if err := fv.Set("-2147483649"); err == nil { // MinInt32 - 1
+			t.Fatal("expected underflow error for int32")
+		}
+	})
+
+	t.Run("empty", func(t *testing.T) {
+		t.Parallel()
+		var v int32
+		fv := cli.NewInt32Value(&v)
+		if err := fv.Set(""); err == nil {
+			t.Fatal("expected error for empty int32")
 		}
 	})
 
@@ -129,6 +149,15 @@ func TestUint64Value(t *testing.T) {
 			t.Fatalf("want max uint64, got %d", v)
 		}
 	})
+
+	t.Run("negative rejected", func(t *testing.T) {
+		t.Parallel()
+		var v uint64
+		fv := cli.NewUint64Value(&v)
+		if err := fv.Set("-1"); err == nil {
+			t.Fatal("expected error for negative uint64")
+		}
+	})
 }
 
 func TestFloat32Value(t *testing.T) {
@@ -143,6 +172,16 @@ func TestFloat32Value(t *testing.T) {
 		}
 		if v < 3.13 || v > 3.15 {
 			t.Fatalf("want ~3.14, got %f", v)
+		}
+	})
+
+	t.Run("overflow", func(t *testing.T) {
+		t.Parallel()
+		var v float32
+		fv := cli.NewFloat32Value(&v)
+		huge := fmt.Sprintf("%e", math.MaxFloat64)
+		if err := fv.Set(huge); err == nil {
+			t.Fatal("expected overflow error for float32")
 		}
 	})
 
@@ -683,4 +722,41 @@ func TestStringSliceValue(t *testing.T) {
 			t.Fatalf("want [foo bar], got %v", tags)
 		}
 	})
+}
+
+func TestFlagValue_NilPointerString(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		fn   func() string
+	}{
+		{"Int32Value", func() string { return (&cli.Int32Value{}).String() }},
+		{"Int64Value", func() string { return (&cli.Int64Value{}).String() }},
+		{"Uint32Value", func() string { return (&cli.Uint32Value{}).String() }},
+		{"Uint64Value", func() string { return (&cli.Uint64Value{}).String() }},
+		{"Float32Value", func() string { return (&cli.Float32Value{}).String() }},
+		{"EnumValue", func() string { return (&cli.EnumValue{}).String() }},
+		{"StringSliceValue", func() string { return (&cli.StringSliceValue{}).String() }},
+		{"BoolSliceValue", func() string { return (&cli.BoolSliceValue{}).String() }},
+		{"Int32SliceValue", func() string { return (&cli.Int32SliceValue{}).String() }},
+		{"Int64SliceValue", func() string { return (&cli.Int64SliceValue{}).String() }},
+		{"Uint32SliceValue", func() string { return (&cli.Uint32SliceValue{}).String() }},
+		{"Uint64SliceValue", func() string { return (&cli.Uint64SliceValue{}).String() }},
+		{"Float32SliceValue", func() string { return (&cli.Float32SliceValue{}).String() }},
+		{"Float64SliceValue", func() string { return (&cli.Float64SliceValue{}).String() }},
+		{"EnumSliceValue", func() string { return (&cli.EnumSliceValue{}).String() }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("%s.String() panicked with nil ptr: %v", tt.name, r)
+				}
+			}()
+			_ = tt.fn()
+		})
+	}
 }
