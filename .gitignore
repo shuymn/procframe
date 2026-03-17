@@ -14,9 +14,7 @@
 /.cache/
 
 # Example binaries
-/examples/echo/echo
-/examples/ticker/ticker
-/examples/greeter/greeter
+/examples/kv/kv
 
 # env files
 .env
