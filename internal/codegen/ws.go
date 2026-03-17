@@ -34,9 +34,10 @@ func generateWS(
 		switch mi.Shape {
 		case shapeServerStream:
 			g.P("\t", wsPkg.Ident("HandleServerStream"), "(s, ", procedure, ", h.", m.GoName, ")")
-		case shapeClientStream, shapeBidi:
-			// WS v2 session protocol handles client-stream and bidi shapes (Theme 3).
-			continue
+		case shapeClientStream:
+			g.P("\t", wsPkg.Ident("HandleClientStream"), "(s, ", procedure, ", h.", m.GoName, ")")
+		case shapeBidi:
+			g.P("\t", wsPkg.Ident("HandleBidi"), "(s, ", procedure, ", h.", m.GoName, ")")
 		default:
 			g.P("\t", wsPkg.Ident("HandleUnary"), "(s, ", procedure, ", h.", m.GoName, ")")
 		}
