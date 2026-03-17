@@ -51,16 +51,18 @@ func TestIntegration_WSInterceptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal request: %v", err)
 	}
-	sendFrame(t, ctx, conn, inboundFrame{
-		ID:        "s-1",
-		Procedure: "/test.v1.TickService/Watch",
-		Payload:   json.RawMessage(payload),
-	})
+
+	sendOpen(t, ctx, conn, "s-1", "/test.v1.TickService/Watch", "server_stream")
+	sendMessage(t, ctx, conn, "s-1", json.RawMessage(payload))
+	sendClose(t, ctx, conn, "s-1")
 
 	for i := range 2 {
 		out := readFrame(t, ctx, conn)
 		if out.Error != nil {
 			t.Fatalf("frame %d: unexpected error: %+v", i, out.Error)
+		}
+		if out.Type != "message" {
+			t.Fatalf("frame %d: want type=message, got %q", i, out.Type)
 		}
 		var tick testv1.TickResponse
 		if err := protojson.Unmarshal(out.Payload, &tick); err != nil {
@@ -69,6 +71,12 @@ func TestIntegration_WSInterceptor(t *testing.T) {
 		if tick.Label != "wrapped:ping" {
 			t.Fatalf("frame %d: want wrapped label, got %q", i, tick.Label)
 		}
+	}
+
+	// Read close frame.
+	close1 := readFrame(t, ctx, conn)
+	if close1.Type != "close" {
+		t.Fatalf("want type=close, got %q", close1.Type)
 	}
 }
 

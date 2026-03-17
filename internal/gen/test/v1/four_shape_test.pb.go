@@ -225,20 +225,20 @@ const file_test_v1_four_shape_test_proto_rawDesc = "" +
 	"\x04text\x18\x01 \x01(\tB\x0f\xd2\xf3\x18\v\n" +
 	"\tChat textR\x04text\"\x1f\n" +
 	"\tChatReply\x12\x12\n" +
-	"\x04text\x18\x01 \x01(\tR\x04text2\xb1\x03\n" +
-	"\x10FourShapeService\x12V\n" +
-	"\x04Ping\x12\x17.test.v1.CollectRequest\x1a\x18.test.v1.CollectResponse\"\x1b\x92\xb2\x19\x17\n" +
+	"\x04text\x18\x01 \x01(\tR\x04text2\xc1\x03\n" +
+	"\x10FourShapeService\x12Z\n" +
+	"\x04Ping\x12\x17.test.v1.CollectRequest\x1a\x18.test.v1.CollectResponse\"\x1f\x92\xb2\x19\x1b\n" +
 	"\x06\n" +
-	"\x04ping\"\tPing once2\x02\b\x01\x12m\n" +
-	"\aCollect\x12\x17.test.v1.CollectRequest\x1a\x18.test.v1.CollectResponse\"-\x92\xb2\x19)\n" +
+	"\x04ping\x1a\x02\b\x01\"\tPing once2\x02\b\x01\x12q\n" +
+	"\aCollect\x12\x17.test.v1.CollectRequest\x1a\x18.test.v1.CollectResponse\"1\x92\xb2\x19-\n" +
 	"\t\n" +
-	"\acollect\"\x18Collect items from stdin2\x02\b\x01(\x01\x12U\n" +
-	"\x04Feed\x12\x17.test.v1.CollectRequest\x1a\x12.test.v1.ChatReply\"\x1e\x92\xb2\x19\x1a\n" +
+	"\acollect\x1a\x02\b\x01\"\x18Collect items from stdin2\x02\b\x01(\x01\x12Y\n" +
+	"\x04Feed\x12\x17.test.v1.CollectRequest\x1a\x12.test.v1.ChatReply\"\"\x92\xb2\x19\x1e\n" +
 	"\x06\n" +
-	"\x04feed\"\fFeed replies2\x02\b\x010\x01\x12Z\n" +
-	"\x04Chat\x12\x14.test.v1.ChatMessage\x1a\x12.test.v1.ChatReply\"$\x92\xb2\x19 \n" +
+	"\x04feed\x1a\x02\b\x01\"\fFeed replies2\x02\b\x010\x01\x12^\n" +
+	"\x04Chat\x12\x14.test.v1.ChatMessage\x1a\x12.test.v1.ChatReply\"(\x92\xb2\x19$\n" +
 	"\x06\n" +
-	"\x04chat\"\x12Bidirectional chat2\x02\b\x01(\x010\x01\x1a#\x8a\xb2\x19\x1f\n" +
+	"\x04chat\x1a\x02\b\x01\"\x12Bidirectional chat2\x02\b\x01(\x010\x01\x1a#\x8a\xb2\x19\x1f\n" +
 	"\x06\n" +
 	"\x04four\x1a\x15Four-shape operationsB9Z7github.com/shuymn/procframe/internal/gen/test/v1;testv1b\x06proto3"
 

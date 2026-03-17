@@ -11,6 +11,7 @@ import (
 	procframe "github.com/shuymn/procframe"
 	cli "github.com/shuymn/procframe/transport/cli"
 	connect "github.com/shuymn/procframe/transport/connect"
+	ws "github.com/shuymn/procframe/transport/ws"
 	protojson "google.golang.org/protobuf/encoding/protojson"
 	io "io"
 	http "net/http"
@@ -564,4 +565,14 @@ func NewFourShapeServiceConnectHandler(h FourShapeServiceHandler, opts ...connec
 		opts...,
 	))
 	return "/test.v1.FourShapeService/", mux
+}
+
+// NewFourShapeServiceWSHandler registers WebSocket RPC handlers for FourShapeService.
+// The handlers are registered on the given Server, which can be shared
+// across multiple services.
+func NewFourShapeServiceWSHandler(s *ws.Server, h FourShapeServiceHandler) {
+	ws.HandleUnary(s, "/test.v1.FourShapeService/Ping", h.Ping)
+	ws.HandleClientStream(s, "/test.v1.FourShapeService/Collect", h.Collect)
+	ws.HandleServerStream(s, "/test.v1.FourShapeService/Feed", h.Feed)
+	ws.HandleBidi(s, "/test.v1.FourShapeService/Chat", h.Chat)
 }

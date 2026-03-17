@@ -45,6 +45,9 @@ service FourShapeService {
       connect: {
         enabled: true
       }
+      ws: {
+        enabled: true
+      }
       summary: "Ping once"
     };
   }
@@ -56,6 +59,9 @@ service FourShapeService {
         segments: ["collect"]
       }
       connect: {
+        enabled: true
+      }
+      ws: {
         enabled: true
       }
       summary: "Collect items from stdin"
@@ -71,6 +77,9 @@ service FourShapeService {
       connect: {
         enabled: true
       }
+      ws: {
+        enabled: true
+      }
       summary: "Feed replies"
     };
   }
@@ -82,6 +91,9 @@ service FourShapeService {
         segments: ["chat"]
       }
       connect: {
+        enabled: true
+      }
+      ws: {
         enabled: true
       }
       summary: "Bidirectional chat"
