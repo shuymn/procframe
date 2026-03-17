@@ -802,12 +802,7 @@ func TestIntegration_ConnectErrorNoInternalLeak(t *testing.T) {
 		t.Fatal("expected error")
 	}
 
-	msg := err.Error()
-	for _, leak := range []string{".go:", "goroutine", "runtime.", "panic", "stack"} {
-		if strings.Contains(msg, leak) {
-			t.Fatalf("error message leaks internal: %q found in %q", leak, msg)
-		}
-	}
+	checkNoInternalExposure(t, err.Error())
 }
 
 // --- Generated Connect client integration tests ---
@@ -960,6 +955,169 @@ func TestIntegration_ConnectClientBidi(t *testing.T) {
 			t.Fatalf("reply[%d]: want %q, got %q", i, want, replies[i])
 		}
 	}
+}
+
+// ============================================================
+// Adversarial helpers
+// ============================================================
+
+// checkNoInternalExposure verifies an error message doesn't leak Go runtime
+// internals, file paths, or stack traces.
+func checkNoInternalExposure(t *testing.T, msg string) {
+	t.Helper()
+	sensitive := []string{
+		".go:",
+		"goroutine ",
+		"runtime.",
+		"panic:",
+		"/Users/",
+		"/home/",
+		"github.com/",
+	}
+	for _, s := range sensitive {
+		if strings.Contains(msg, s) {
+			t.Errorf("error message leaks internal detail %q: %s", s, msg)
+		}
+	}
+}
+
+// ============================================================
+// Integration tests — Adversarial
+// ============================================================
+
+// TestIntegration_ConnectRawErrorFallbackExposure verifies the behavior when a
+// handler returns a raw Go error (not StatusError) and no ErrorMapper
+// is configured. The fallback path passes the raw error to Connect via
+// connectrpc.NewError(CodeInternal, err), exposing err.Error() to the client.
+func TestIntegration_ConnectRawErrorFallbackExposure(t *testing.T) {
+	t.Parallel()
+
+	t.Run("raw_error_without_mapper", func(t *testing.T) {
+		t.Parallel()
+
+		procedure, handler := connecttransport.NewUnaryHandler(
+			"/adversarial.v1.Error/Raw",
+			func(_ context.Context, _ *procframe.Request[testv1.EchoRequest]) (*procframe.Response[testv1.EchoResponse], error) {
+				return nil, errors.New("connection to db at 10.0.0.5:5432 failed")
+			},
+		)
+
+		mux := http.NewServeMux()
+		mux.Handle(procedure, handler)
+		srv := httptest.NewServer(mux)
+		t.Cleanup(srv.Close)
+
+		client := connectrpc.NewClient[testv1.EchoRequest, testv1.EchoResponse](
+			http.DefaultClient,
+			srv.URL+procedure,
+		)
+
+		_, err := client.CallUnary(t.Context(), connectrpc.NewRequest(&testv1.EchoRequest{
+			Message: "trigger",
+		}))
+		if err == nil {
+			t.Fatal("expected error from handler")
+		}
+
+		// The raw error message is exposed to the client via Connect.
+		// Verify it doesn't contain Go runtime internals (file paths, stack traces).
+		checkNoInternalExposure(t, err.Error())
+
+		// Verify the Connect error code is Internal (fallback mapping).
+		var connectErr *connectrpc.Error
+		if !errors.As(err, &connectErr) {
+			t.Fatalf("expected *connectrpc.Error, got %T", err)
+		}
+		if connectErr.Code() != connectrpc.CodeInternal {
+			t.Errorf("want CodeInternal, got %v", connectErr.Code())
+		}
+	})
+
+	t.Run("raw_error_with_mapper", func(t *testing.T) {
+		t.Parallel()
+
+		procedure, handler := connecttransport.NewUnaryHandler(
+			"/adversarial.v1.Error/Mapped",
+			func(_ context.Context, _ *procframe.Request[testv1.EchoRequest]) (*procframe.Response[testv1.EchoResponse], error) {
+				return nil, errors.New("secret db connection string: postgres://admin:password@db:5432")
+			},
+			connecttransport.WithErrorMapper(func(_ error) (procframe.Status, bool) {
+				return procframe.Status{
+					Code:    procframe.CodeUnavailable,
+					Message: "service temporarily unavailable",
+				}, true
+			}),
+		)
+
+		mux := http.NewServeMux()
+		mux.Handle(procedure, handler)
+		srv := httptest.NewServer(mux)
+		t.Cleanup(srv.Close)
+
+		client := connectrpc.NewClient[testv1.EchoRequest, testv1.EchoResponse](
+			http.DefaultClient,
+			srv.URL+procedure,
+		)
+
+		_, err := client.CallUnary(t.Context(), connectrpc.NewRequest(&testv1.EchoRequest{
+			Message: "trigger",
+		}))
+		if err == nil {
+			t.Fatal("expected error from handler")
+		}
+
+		// ErrorMapper should replace the raw error with a sanitized message.
+		if strings.Contains(err.Error(), "postgres://") {
+			t.Error("VULNERABLE: raw db connection string leaked through ErrorMapper")
+		}
+		if strings.Contains(err.Error(), "password") {
+			t.Error("VULNERABLE: password leaked through ErrorMapper")
+		}
+		checkNoInternalExposure(t, err.Error())
+	})
+}
+
+// TestIntegration_ConnectUnknownErrorCodeMapping verifies that an unrecognized
+// procframe error code falls through to connect.CodeInternal.
+func TestIntegration_ConnectUnknownErrorCodeMapping(t *testing.T) {
+	t.Parallel()
+
+	// Use a code string that doesn't match any known procframe code.
+	unknownCode := procframe.Code("totally_unknown")
+
+	procedure, handler := connecttransport.NewUnaryHandler(
+		"/adversarial.v1.Error/Unknown",
+		func(_ context.Context, _ *procframe.Request[testv1.EchoRequest]) (*procframe.Response[testv1.EchoResponse], error) {
+			return nil, procframe.NewError(unknownCode, "unknown code error")
+		},
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle(procedure, handler)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	client := connectrpc.NewClient[testv1.EchoRequest, testv1.EchoResponse](
+		http.DefaultClient,
+		srv.URL+procedure,
+	)
+
+	_, err := client.CallUnary(t.Context(), connectrpc.NewRequest(&testv1.EchoRequest{
+		Message: "trigger",
+	}))
+	if err == nil {
+		t.Fatal("expected error from handler")
+	}
+
+	var connectErr *connectrpc.Error
+	if !errors.As(err, &connectErr) {
+		t.Fatalf("expected *connectrpc.Error, got %T", err)
+	}
+	// Unknown procframe codes should map to CodeInternal (safe fallback).
+	if connectErr.Code() != connectrpc.CodeInternal {
+		t.Errorf("unknown code should map to CodeInternal, got %v", connectErr.Code())
+	}
+	checkNoInternalExposure(t, err.Error())
 }
 
 func TestIntegration_ConnectClientOptOut(t *testing.T) {
