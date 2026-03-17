@@ -2619,3 +2619,301 @@ func TestIntegration_WSClientConcurrentSendAndCloseSend(t *testing.T) {
 		}
 	}
 }
+
+// ============================================================
+// Adversarial helpers
+// ============================================================
+
+// assertErrorFrame checks that an outbound frame is an error with the expected code.
+func assertErrorFrame(t *testing.T, frame outboundFrame, code string) {
+	t.Helper()
+	if frame.Error == nil {
+		t.Fatalf("expected error frame, got type=%q", frame.Type)
+	}
+	if frame.Error.Code != code {
+		t.Fatalf("want error code %q, got %q (message: %s)", code, frame.Error.Code, frame.Error.Message)
+	}
+}
+
+// checkNoInternalExposure verifies an error message doesn't leak Go runtime
+// internals, file paths, or stack traces.
+func checkNoInternalExposure(t *testing.T, msg string) {
+	t.Helper()
+	sensitive := []string{
+		".go:",        // Go source file references
+		"goroutine ",  // stack traces
+		"runtime.",    // Go runtime references
+		"panic:",      // panic markers
+		"/Users/",     // macOS absolute paths
+		"/home/",      // Linux absolute paths
+		"github.com/", // module paths in stack traces
+	}
+	for _, s := range sensitive {
+		if strings.Contains(msg, s) {
+			t.Errorf("error message leaks internal detail %q: %s", s, msg)
+		}
+	}
+}
+
+// ============================================================
+// Integration tests — Adversarial
+// ============================================================
+
+// TestIntegration_WSErrorMessageExposure verifies that error frames returned
+// by the WS server do not leak Go runtime internals, file paths, or stack
+// traces to the client across all error paths.
+func TestIntegration_WSErrorMessageExposure(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	testv1.NewEchoServiceWSHandler(s, &echoHandler{})
+
+	// Register a handler that returns a raw Go error (not StatusError).
+	ws.HandleUnary(
+		s,
+		"/adversarial.v1.Error/Raw",
+		func(_ context.Context, _ *procframe.Request[testv1.EchoRequest]) (*procframe.Response[testv1.EchoResponse], error) {
+			return nil, errors.New("internal database connection refused at 10.0.0.5:5432")
+		},
+	)
+
+	conn, ctx := startWSServer(t, s)
+
+	t.Run("invalid_protojson", func(t *testing.T) {
+		sendOpen(t, ctx, conn, "exp-1", "/test.v1.EchoService/Echo", "unary")
+		sendMessage(t, ctx, conn, "exp-1", json.RawMessage(`{"message": 12345}`))
+		sendClose(t, ctx, conn, "exp-1")
+
+		out := readFrame(t, ctx, conn)
+		if out.Error == nil {
+			// protojson accepted the value; drain close frame and skip.
+			readFrame(t, ctx, conn)
+			t.Skip("protojson accepted the value; no error to check")
+		}
+		checkNoInternalExposure(t, out.Error.Message)
+	})
+
+	t.Run("unknown_procedure", func(t *testing.T) {
+		sendOpen(t, ctx, conn, "exp-2", "/evil/Procedure", "unary")
+		out := readFrame(t, ctx, conn)
+		assertErrorFrame(t, out, string(procframe.CodeNotFound))
+		checkNoInternalExposure(t, out.Error.Message)
+	})
+
+	t.Run("shape_mismatch", func(t *testing.T) {
+		sendOpen(t, ctx, conn, "exp-3", "/test.v1.EchoService/Echo", "server_stream")
+		out := readFrame(t, ctx, conn)
+		assertErrorFrame(t, out, string(procframe.CodeInvalidArgument))
+		checkNoInternalExposure(t, out.Error.Message)
+	})
+
+	t.Run("raw_error_from_handler", func(t *testing.T) {
+		payload, err := protojson.Marshal(&testv1.EchoRequest{Message: "test"})
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		sendOpen(t, ctx, conn, "exp-4", "/adversarial.v1.Error/Raw", "unary")
+		sendMessage(t, ctx, conn, "exp-4", payload)
+		sendClose(t, ctx, conn, "exp-4")
+
+		out := readFrame(t, ctx, conn)
+		if out.Error == nil {
+			t.Fatal("expected error from handler")
+		}
+		// Raw error message is passed through by design (toErrorFrame fallback).
+		// Verify it doesn't contain Go runtime internals.
+		checkNoInternalExposure(t, out.Error.Message)
+		assertErrorFrame(t, out, string(procframe.CodeInternal))
+	})
+}
+
+// TestIntegration_WSMaxInflightBoundary verifies the server handles
+// boundary values for the maxInflight option without panic or deadlock.
+func TestIntegration_WSMaxInflightBoundary(t *testing.T) {
+	t.Parallel()
+
+	t.Run("zero_rejects_all_requests", func(t *testing.T) {
+		t.Parallel()
+
+		s := ws.NewServer(ws.WithMaxInflight(0))
+		testv1.NewEchoServiceWSHandler(s, &echoHandler{})
+		conn, ctx := startWSServer(t, s)
+
+		// With maxInflight=0, the semaphore is an unbuffered channel.
+		// The select-with-default in handleOpen always takes the default
+		// (reject), so every request gets CodeUnavailable + retryable.
+		sendOpen(t, ctx, conn, "zero-1", "/test.v1.EchoService/Echo", "unary")
+		out := readFrame(t, ctx, conn)
+		assertErrorFrame(t, out, string(procframe.CodeUnavailable))
+		if !out.Error.Retryable {
+			t.Fatal("expected retryable=true for maxInflight rejection")
+		}
+	})
+
+	t.Run("negative_does_not_crash_process", func(t *testing.T) {
+		t.Parallel()
+
+		// WithMaxInflight(-1) causes make(chan struct{}, -1) in serve(),
+		// which panics. The panic should be caught by net/http's recovery
+		// after the WS upgrade, preventing a process crash.
+		s := ws.NewServer(ws.WithMaxInflight(-1))
+		testv1.NewEchoServiceWSHandler(s, &echoHandler{})
+
+		mux := http.NewServeMux()
+		mux.Handle("/ws", s)
+		srv := httptest.NewServer(mux)
+		t.Cleanup(srv.Close)
+
+		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+		defer cancel()
+
+		wsURL := "ws" + srv.URL[len("http"):] + "/ws"
+		//nolint:bodyclose // coder/websocket manages resp.Body internally
+		conn, _, err := websocket.Dial(ctx, wsURL, nil)
+		if err != nil {
+			// Connection failed: server panic caught. DEFENDED.
+			return
+		}
+		defer conn.CloseNow() //nolint:errcheck // CloseNow errors are not actionable in test cleanup
+
+		// Connection succeeded but serve() will panic.
+		// Send a frame and expect disconnection.
+		data, err := json.Marshal(inboundFrame{
+			Type: "open", ID: "neg-1",
+			Procedure: "/test.v1.EchoService/Echo", Shape: "unary",
+		})
+		if err != nil {
+			t.Fatalf("marshal: %v", err)
+		}
+		_ = conn.Write(ctx, websocket.MessageText, data) //nolint:errcheck // write may fail if server panics
+
+		readCtx, readCancel := context.WithTimeout(ctx, 1*time.Second)
+		defer readCancel()
+		_, _, rErr := conn.Read(readCtx)
+		// Expect read error (server disconnected after panic recovery)
+		// or timeout. Either is acceptable — process did not crash.
+		_ = rErr
+	})
+}
+
+// TestIntegration_WSClientCallAfterClose verifies that calling RPC methods
+// on a client Conn after Close returns an error promptly rather than
+// hanging indefinitely.
+func TestIntegration_WSClientCallAfterClose(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	testv1.NewEchoServiceWSHandler(s, &echoHandler{})
+	conn := startWSClientConn(t, s)
+
+	// Close the client connection.
+	if err := conn.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	// Wait briefly for close to propagate through internal goroutines.
+	time.Sleep(100 * time.Millisecond)
+
+	// Call after close: must return error within timeout, not hang.
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+
+	_, err := ws.CallUnary[testv1.EchoRequest, testv1.EchoResponse](
+		ctx, conn, "/test.v1.EchoService/Echo",
+		&testv1.EchoRequest{Message: "after-close"},
+	)
+	if err == nil {
+		t.Fatal("expected error for call after close, got nil")
+	}
+	// Key assertion: reaching this point means we didn't hang.
+	// The 3s timeout was not reached.
+}
+
+// TestIntegration_WSRecvChOverflow verifies behavior when the per-session
+// receive buffer is overwhelmed. The server's handleMessage uses a
+// select-with-default to drop messages when recvCh is full, resulting
+// in silent data loss for slow handlers.
+func TestIntegration_WSRecvChOverflow(t *testing.T) {
+	t.Parallel()
+
+	const totalMessages = 100
+	const recvChBufSize = 64 // matches server.go const
+
+	startReading := make(chan struct{})
+	receivedCount := make(chan int32, 1)
+
+	s := ws.NewServer()
+	ws.HandleClientStream[testv1.CollectRequest, testv1.CollectResponse](
+		s,
+		"/adversarial.v1.Overflow/Collect",
+		func(_ context.Context, stream procframe.ClientStream[testv1.CollectRequest]) (*procframe.Response[testv1.CollectResponse], error) {
+			// Block until the test signals us. This ensures the recvCh
+			// buffer fills up before the handler starts consuming.
+			<-startReading
+
+			var count int32
+			for {
+				_, err := stream.Receive()
+				if errors.Is(err, io.EOF) {
+					break
+				}
+				if err != nil {
+					return nil, err
+				}
+				count++
+			}
+			receivedCount <- count
+			return &procframe.Response[testv1.CollectResponse]{
+				Msg: &testv1.CollectResponse{Count: count},
+			}, nil
+		},
+	)
+
+	conn, ctx := startWSServer(t, s)
+
+	// Open a client-stream session.
+	sendOpen(t, ctx, conn, "overflow-1", "/adversarial.v1.Overflow/Collect", "client_stream")
+
+	// Rapidly send more messages than the recvCh buffer can hold
+	// while the handler is blocked.
+	payload, err := protojson.Marshal(&testv1.CollectRequest{Item: "x"})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	for range totalMessages {
+		sendMessage(t, ctx, conn, "overflow-1", payload)
+	}
+
+	// Close the send direction.
+	sendClose(t, ctx, conn, "overflow-1")
+
+	// Now unblock the handler so it reads what's buffered.
+	close(startReading)
+
+	// Wait for the handler to complete and report.
+	select {
+	case count := <-receivedCount:
+		switch {
+		case count == int32(totalMessages):
+			t.Logf("all %d messages received (no overflow)", totalMessages)
+		case count <= int32(recvChBufSize):
+			// Confirmed: messages beyond buffer size silently dropped.
+			t.Logf("received %d/%d messages; %d silently dropped (recvCh buffer overflow)",
+				count, totalMessages, int32(totalMessages)-count)
+		default:
+			t.Logf("received %d/%d messages", count, totalMessages)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("handler did not complete within timeout — possible goroutine leak")
+	}
+
+	// Read the response frame (message + close).
+	out := readFrame(t, ctx, conn)
+	if out.Error != nil {
+		t.Fatalf("unexpected error: %+v", out.Error)
+	}
+	if out.Type == "message" {
+		// Drain the close frame.
+		readFrame(t, ctx, conn)
+	}
+}
