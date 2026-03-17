@@ -186,7 +186,7 @@
   - Why not split vertically further?: 共通 interceptor 契約、transport option、generated CLI 呼び出し経路は同じ public capability を構成しており、どれか単体では外部から観測できる前進にならないため
   - Escalate if: type-erased interceptor 契約と typed handler の間で unary/stream の両方を unsafe なしに橋渡しできない場合
 
-- [ ] Theme: Connect クライアントコード生成
+- [x] Theme: Connect クライアントコード生成
   - Outcome: `connect.enabled = true` のメソッドに対し、型付き Connect クライアントが codegen で自動生成され、手動の `connectrpc.NewClient` 構築が不要になる
   - Goal: `protoc-gen-procframe-go` に Connect クライアント生成を追加。インターフェース、実装構造体、コンストラクタを `.proc.go` ファイルに出力する
   - Must Not Break: 既存 handler interface の signature, CLI/Connect/WS transport の動作, codegen の既存出力, error code 体系, proto option の後方互換性

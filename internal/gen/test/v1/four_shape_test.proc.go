@@ -4,6 +4,7 @@ package testv1
 
 import (
 	bufio "bufio"
+	connect1 "connectrpc.com/connect"
 	context "context"
 	json "encoding/json"
 	flag "flag"
@@ -565,6 +566,47 @@ func NewFourShapeServiceConnectHandler(h FourShapeServiceHandler, opts ...connec
 		opts...,
 	))
 	return "/test.v1.FourShapeService/", mux
+}
+
+// FourShapeServiceConnectClient is the client interface for FourShapeService over Connect.
+type FourShapeServiceConnectClient interface {
+	Ping(ctx context.Context, req *connect1.Request[CollectRequest]) (*connect1.Response[CollectResponse], error)
+	Collect(ctx context.Context) *connect1.ClientStreamForClient[CollectRequest, CollectResponse]
+	Feed(ctx context.Context, req *connect1.Request[CollectRequest]) (*connect1.ServerStreamForClient[ChatReply], error)
+	Chat(ctx context.Context) *connect1.BidiStreamForClient[ChatMessage, ChatReply]
+}
+
+type fourShapeServiceConnectClient struct {
+	ping    *connect1.Client[CollectRequest, CollectResponse]
+	collect *connect1.Client[CollectRequest, CollectResponse]
+	feed    *connect1.Client[CollectRequest, ChatReply]
+	chat    *connect1.Client[ChatMessage, ChatReply]
+}
+
+// NewFourShapeServiceConnectClient constructs a Connect client for FourShapeService.
+func NewFourShapeServiceConnectClient(httpClient connect1.HTTPClient, baseURL string, opts ...connect1.ClientOption) FourShapeServiceConnectClient {
+	return &fourShapeServiceConnectClient{
+		ping:    connect1.NewClient[CollectRequest, CollectResponse](httpClient, baseURL+"/test.v1.FourShapeService/Ping", opts...),
+		collect: connect1.NewClient[CollectRequest, CollectResponse](httpClient, baseURL+"/test.v1.FourShapeService/Collect", opts...),
+		feed:    connect1.NewClient[CollectRequest, ChatReply](httpClient, baseURL+"/test.v1.FourShapeService/Feed", opts...),
+		chat:    connect1.NewClient[ChatMessage, ChatReply](httpClient, baseURL+"/test.v1.FourShapeService/Chat", opts...),
+	}
+}
+
+func (c *fourShapeServiceConnectClient) Ping(ctx context.Context, req *connect1.Request[CollectRequest]) (*connect1.Response[CollectResponse], error) {
+	return c.ping.CallUnary(ctx, req)
+}
+
+func (c *fourShapeServiceConnectClient) Collect(ctx context.Context) *connect1.ClientStreamForClient[CollectRequest, CollectResponse] {
+	return c.collect.CallClientStream(ctx)
+}
+
+func (c *fourShapeServiceConnectClient) Feed(ctx context.Context, req *connect1.Request[CollectRequest]) (*connect1.ServerStreamForClient[ChatReply], error) {
+	return c.feed.CallServerStream(ctx, req)
+}
+
+func (c *fourShapeServiceConnectClient) Chat(ctx context.Context) *connect1.BidiStreamForClient[ChatMessage, ChatReply] {
+	return c.chat.CallBidiStream(ctx)
 }
 
 // NewFourShapeServiceWSHandler registers WebSocket RPC handlers for FourShapeService.

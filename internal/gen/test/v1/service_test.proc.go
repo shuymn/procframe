@@ -3,6 +3,7 @@
 package testv1
 
 import (
+	connect1 "connectrpc.com/connect"
 	context "context"
 	json "encoding/json"
 	flag "flag"
@@ -248,6 +249,26 @@ func NewEchoServiceConnectHandler(h EchoServiceHandler, opts ...connect.Option) 
 		opts...,
 	))
 	return "/test.v1.EchoService/", mux
+}
+
+// EchoServiceConnectClient is the client interface for EchoService over Connect.
+type EchoServiceConnectClient interface {
+	Echo(ctx context.Context, req *connect1.Request[EchoRequest]) (*connect1.Response[EchoResponse], error)
+}
+
+type echoServiceConnectClient struct {
+	echo *connect1.Client[EchoRequest, EchoResponse]
+}
+
+// NewEchoServiceConnectClient constructs a Connect client for EchoService.
+func NewEchoServiceConnectClient(httpClient connect1.HTTPClient, baseURL string, opts ...connect1.ClientOption) EchoServiceConnectClient {
+	return &echoServiceConnectClient{
+		echo: connect1.NewClient[EchoRequest, EchoResponse](httpClient, baseURL+"/test.v1.EchoService/Echo", opts...),
+	}
+}
+
+func (c *echoServiceConnectClient) Echo(ctx context.Context, req *connect1.Request[EchoRequest]) (*connect1.Response[EchoResponse], error) {
+	return c.echo.CallUnary(ctx, req)
 }
 
 // NewEchoServiceWSHandler registers WebSocket RPC handlers for EchoService.

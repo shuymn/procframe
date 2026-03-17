@@ -3,6 +3,7 @@
 package testv1
 
 import (
+	connect1 "connectrpc.com/connect"
 	context "context"
 	json "encoding/json"
 	flag "flag"
@@ -422,6 +423,33 @@ func NewCliOptionsTestServiceConnectHandler(h CliOptionsTestServiceHandler, opts
 		opts...,
 	))
 	return "/test.v1.CliOptionsTestService/", mux
+}
+
+// CliOptionsTestServiceConnectClient is the client interface for CliOptionsTestService over Connect.
+type CliOptionsTestServiceConnectClient interface {
+	DefaultEnabled(ctx context.Context, req *connect1.Request[PingRequest]) (*connect1.Response[PingResponse], error)
+	ExplicitEnabled(ctx context.Context, req *connect1.Request[PingRequest]) (*connect1.Response[PingResponse], error)
+}
+
+type cliOptionsTestServiceConnectClient struct {
+	defaultEnabled  *connect1.Client[PingRequest, PingResponse]
+	explicitEnabled *connect1.Client[PingRequest, PingResponse]
+}
+
+// NewCliOptionsTestServiceConnectClient constructs a Connect client for CliOptionsTestService.
+func NewCliOptionsTestServiceConnectClient(httpClient connect1.HTTPClient, baseURL string, opts ...connect1.ClientOption) CliOptionsTestServiceConnectClient {
+	return &cliOptionsTestServiceConnectClient{
+		defaultEnabled:  connect1.NewClient[PingRequest, PingResponse](httpClient, baseURL+"/test.v1.CliOptionsTestService/DefaultEnabled", opts...),
+		explicitEnabled: connect1.NewClient[PingRequest, PingResponse](httpClient, baseURL+"/test.v1.CliOptionsTestService/ExplicitEnabled", opts...),
+	}
+}
+
+func (c *cliOptionsTestServiceConnectClient) DefaultEnabled(ctx context.Context, req *connect1.Request[PingRequest]) (*connect1.Response[PingResponse], error) {
+	return c.defaultEnabled.CallUnary(ctx, req)
+}
+
+func (c *cliOptionsTestServiceConnectClient) ExplicitEnabled(ctx context.Context, req *connect1.Request[PingRequest]) (*connect1.Response[PingResponse], error) {
+	return c.explicitEnabled.CallUnary(ctx, req)
 }
 
 // NewCliOptionsTestServiceWSHandler registers WebSocket RPC handlers for CliOptionsTestService.

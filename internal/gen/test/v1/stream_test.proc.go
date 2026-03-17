@@ -3,6 +3,7 @@
 package testv1
 
 import (
+	connect1 "connectrpc.com/connect"
 	context "context"
 	json "encoding/json"
 	flag "flag"
@@ -233,6 +234,26 @@ func NewTickServiceConnectHandler(h TickServiceHandler, opts ...connect.Option) 
 		opts...,
 	))
 	return "/test.v1.TickService/", mux
+}
+
+// TickServiceConnectClient is the client interface for TickService over Connect.
+type TickServiceConnectClient interface {
+	Watch(ctx context.Context, req *connect1.Request[TickRequest]) (*connect1.ServerStreamForClient[TickResponse], error)
+}
+
+type tickServiceConnectClient struct {
+	watch *connect1.Client[TickRequest, TickResponse]
+}
+
+// NewTickServiceConnectClient constructs a Connect client for TickService.
+func NewTickServiceConnectClient(httpClient connect1.HTTPClient, baseURL string, opts ...connect1.ClientOption) TickServiceConnectClient {
+	return &tickServiceConnectClient{
+		watch: connect1.NewClient[TickRequest, TickResponse](httpClient, baseURL+"/test.v1.TickService/Watch", opts...),
+	}
+}
+
+func (c *tickServiceConnectClient) Watch(ctx context.Context, req *connect1.Request[TickRequest]) (*connect1.ServerStreamForClient[TickResponse], error) {
+	return c.watch.CallServerStream(ctx, req)
 }
 
 // NewTickServiceWSHandler registers WebSocket RPC handlers for TickService.

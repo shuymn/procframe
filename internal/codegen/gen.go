@@ -43,6 +43,7 @@ func Generate(plugin *protogen.Plugin, file *protogen.File, params *Params) erro
 		}
 		if hasConnectMethods(svcInfo) {
 			generateConnect(g, svc, svcInfo)
+			generateConnectClient(g, svc, svcInfo)
 		}
 		if hasWsMethods(svcInfo) {
 			generateWS(g, svc, svcInfo)

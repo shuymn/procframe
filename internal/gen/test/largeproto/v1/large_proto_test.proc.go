@@ -4,6 +4,7 @@ package largeprotov1
 
 import (
 	bufio "bufio"
+	connect1 "connectrpc.com/connect"
 	context "context"
 	json "encoding/json"
 	flag "flag"
@@ -768,6 +769,47 @@ func NewLargeProtoServiceConnectHandler(h LargeProtoServiceHandler, opts ...conn
 		opts...,
 	))
 	return "/test.largeproto.v1.LargeProtoService/", mux
+}
+
+// LargeProtoServiceConnectClient is the client interface for LargeProtoService over Connect.
+type LargeProtoServiceConnectClient interface {
+	IngestSpan(ctx context.Context, req *connect1.Request[IngestSpanRequest]) (*connect1.Response[IngestSpanResponse], error)
+	CollectSpans(ctx context.Context) *connect1.ClientStreamForClient[CollectSpanRequest, CollectSpansResponse]
+	WatchSpans(ctx context.Context, req *connect1.Request[WatchSpansRequest]) (*connect1.ServerStreamForClient[WatchSpanEvent], error)
+	StreamSpans(ctx context.Context) *connect1.BidiStreamForClient[CollectSpanRequest, WatchSpanEvent]
+}
+
+type largeProtoServiceConnectClient struct {
+	ingestSpan   *connect1.Client[IngestSpanRequest, IngestSpanResponse]
+	collectSpans *connect1.Client[CollectSpanRequest, CollectSpansResponse]
+	watchSpans   *connect1.Client[WatchSpansRequest, WatchSpanEvent]
+	streamSpans  *connect1.Client[CollectSpanRequest, WatchSpanEvent]
+}
+
+// NewLargeProtoServiceConnectClient constructs a Connect client for LargeProtoService.
+func NewLargeProtoServiceConnectClient(httpClient connect1.HTTPClient, baseURL string, opts ...connect1.ClientOption) LargeProtoServiceConnectClient {
+	return &largeProtoServiceConnectClient{
+		ingestSpan:   connect1.NewClient[IngestSpanRequest, IngestSpanResponse](httpClient, baseURL+"/test.largeproto.v1.LargeProtoService/IngestSpan", opts...),
+		collectSpans: connect1.NewClient[CollectSpanRequest, CollectSpansResponse](httpClient, baseURL+"/test.largeproto.v1.LargeProtoService/CollectSpans", opts...),
+		watchSpans:   connect1.NewClient[WatchSpansRequest, WatchSpanEvent](httpClient, baseURL+"/test.largeproto.v1.LargeProtoService/WatchSpans", opts...),
+		streamSpans:  connect1.NewClient[CollectSpanRequest, WatchSpanEvent](httpClient, baseURL+"/test.largeproto.v1.LargeProtoService/StreamSpans", opts...),
+	}
+}
+
+func (c *largeProtoServiceConnectClient) IngestSpan(ctx context.Context, req *connect1.Request[IngestSpanRequest]) (*connect1.Response[IngestSpanResponse], error) {
+	return c.ingestSpan.CallUnary(ctx, req)
+}
+
+func (c *largeProtoServiceConnectClient) CollectSpans(ctx context.Context) *connect1.ClientStreamForClient[CollectSpanRequest, CollectSpansResponse] {
+	return c.collectSpans.CallClientStream(ctx)
+}
+
+func (c *largeProtoServiceConnectClient) WatchSpans(ctx context.Context, req *connect1.Request[WatchSpansRequest]) (*connect1.ServerStreamForClient[WatchSpanEvent], error) {
+	return c.watchSpans.CallServerStream(ctx, req)
+}
+
+func (c *largeProtoServiceConnectClient) StreamSpans(ctx context.Context) *connect1.BidiStreamForClient[CollectSpanRequest, WatchSpanEvent] {
+	return c.streamSpans.CallBidiStream(ctx)
 }
 
 // NewLargeProtoServiceWSHandler registers WebSocket RPC handlers for LargeProtoService.
