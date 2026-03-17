@@ -793,3 +793,184 @@ func TestParseBootstrapArgs_FlagNameInjection(t *testing.T) {
 		})
 	}
 }
+
+// checkNoInternalExposure verifies an error message doesn't leak Go runtime
+// internals, file paths, or stack traces.
+func checkNoInternalExposure(t *testing.T, msg string) {
+	t.Helper()
+	sensitive := []string{
+		".go:",
+		"goroutine ",
+		"runtime.",
+		"panic:",
+		"/Users/",
+		"/home/",
+		"github.com/",
+	}
+	for _, s := range sensitive {
+		if strings.Contains(msg, s) {
+			t.Errorf("error message leaks internal detail %q: %s", s, msg)
+		}
+	}
+}
+
+// writeConfigFile is a helper that creates a temporary config file.
+func writeConfigFile(t *testing.T, content string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+	return path
+}
+
+// TestLoad_ConfigFieldCaseCollision verifies that a config file
+// containing both camelCase and snake_case forms of the same field is
+// detected as a duplicate.
+func TestLoad_ConfigFieldCaseCollision(t *testing.T) {
+	// Not parallel: uses t.Setenv.
+	t.Setenv("API_TOKEN", "env-token")
+
+	path := writeConfigFile(t, `{
+		"serviceName": "camel",
+		"service_name": "snake"
+	}`)
+
+	_, _, err := config.Load[testv1.RuntimeConfig]([]string{"--config", path, "echo"})
+	if err == nil {
+		t.Fatal("expected error for duplicate camelCase/snake_case field")
+	}
+	if !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("expected 'duplicate' in error, got: %v", err)
+	}
+	checkNoInternalExposure(t, err.Error())
+}
+
+// TestLoad_ConfigUnknownFieldRejection verifies that config files
+// with unknown fields are rejected (DiscardUnknown: false).
+func TestLoad_ConfigUnknownFieldRejection(t *testing.T) {
+	// Not parallel: uses t.Setenv.
+	t.Setenv("API_TOKEN", "env-token")
+
+	path := writeConfigFile(t, `{
+		"serviceName": "test",
+		"unknownField": "should-be-rejected"
+	}`)
+
+	_, _, err := config.Load[testv1.RuntimeConfig]([]string{"--config", path, "echo"})
+	if err == nil {
+		t.Fatal("expected error for unknown field in config file")
+	}
+	checkNoInternalExposure(t, err.Error())
+}
+
+// TestMergeJSONFile_SecretRedactionInErrors verifies that secret field
+// values (apiToken) are redacted in error messages when MergeJSONFile
+// encounters a protojson unmarshal error.
+func TestMergeJSONFile_SecretRedactionInErrors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("secret_not_in_type_error", func(t *testing.T) {
+		t.Parallel()
+
+		// Config with valid apiToken but type error on timeoutSec.
+		// The secret should not appear in the error message.
+		path := writeConfigFile(t, `{
+			"apiToken": "super-secret-token-12345",
+			"timeoutSec": "not-a-number"
+		}`)
+
+		dst := &testv1.RuntimeConfig{}
+		_, err := config.MergeJSONFile(path, dst, "apiToken")
+		if err == nil {
+			t.Fatal("expected error for type mismatch")
+		}
+		if strings.Contains(err.Error(), "super-secret-token-12345") {
+			t.Error("VULNERABLE: secret apiToken value leaked in error message")
+		}
+		checkNoInternalExposure(t, err.Error())
+	})
+
+	t.Run("secret_in_own_type_error", func(t *testing.T) {
+		t.Parallel()
+
+		// Config where the SECRET field itself has a type error.
+		// protojson error will contain the value; redaction must replace it.
+		path := writeConfigFile(t, `{
+			"apiToken": 99999,
+			"serviceName": "test"
+		}`)
+
+		dst := &testv1.RuntimeConfig{}
+		_, err := config.MergeJSONFile(path, dst, "apiToken")
+		if err == nil {
+			t.Fatal("expected error for type mismatch on secret field")
+		}
+		// "99999" is the secret value. It should be redacted.
+		if strings.Contains(err.Error(), "99999") {
+			t.Error("VULNERABLE: secret apiToken value leaked in error message")
+		}
+		checkNoInternalExposure(t, err.Error())
+	})
+
+	t.Run("unknown_field_does_not_leak_secret", func(t *testing.T) {
+		t.Parallel()
+
+		// Config with an unknown field and a secret.
+		path := writeConfigFile(t, `{
+			"apiToken": "classified-key-abc",
+			"hackField": "attack"
+		}`)
+
+		dst := &testv1.RuntimeConfig{}
+		_, err := config.MergeJSONFile(path, dst, "apiToken")
+		if err == nil {
+			t.Fatal("expected error for unknown field")
+		}
+		if strings.Contains(err.Error(), "classified-key-abc") {
+			t.Error("VULNERABLE: secret apiToken value leaked in unknown field error")
+		}
+		checkNoInternalExposure(t, err.Error())
+	})
+}
+
+// TestLoad_PartialFailureReturnsNil verifies that config
+// loading errors leave the pipeline in a clean state and don't
+// produce partial results.
+func TestLoad_PartialFailureReturnsNil(t *testing.T) {
+	t.Run("file_error_returns_nil_config", func(t *testing.T) {
+		// Not parallel: uses t.Setenv.
+		t.Setenv("API_TOKEN", "env-token")
+
+		// Config file with type error — Load should return nil config.
+		path := writeConfigFile(t, `{
+			"serviceName": 12345
+		}`)
+
+		cfg, _, err := config.Load[testv1.RuntimeConfig]([]string{
+			"--config", path, "echo",
+		})
+		if err == nil {
+			t.Fatal("expected error for type mismatch in config file")
+		}
+		if cfg != nil {
+			t.Error("expected nil config on load error, got non-nil")
+		}
+	})
+
+	t.Run("env_error_returns_nil_config", func(t *testing.T) {
+		// Not parallel: uses t.Setenv.
+		// Set an invalid value for an integer field via env var.
+		t.Setenv("API_TOKEN", "valid-token")
+		t.Setenv("TIMEOUT_SEC", "not-an-integer")
+
+		cfg, _, err := config.Load[testv1.RuntimeConfig]([]string{"echo"})
+		if err == nil {
+			t.Fatal("expected error for invalid env var value")
+		}
+		if cfg != nil {
+			t.Error("expected nil config on env parse error, got non-nil")
+		}
+		checkNoInternalExposure(t, err.Error())
+	})
+}
