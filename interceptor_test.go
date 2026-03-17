@@ -812,9 +812,565 @@ func TestServerStreamConn_DoubleReceive(t *testing.T) {
 	}
 }
 
+func TestNewAnyResponseWithMeta(t *testing.T) {
+	t.Parallel()
+
+	msg := &testResponse{Message: "hello"}
+	meta := procframe.Meta{
+		Procedure: "/test.v1.Svc/Foo",
+		RequestID: "req-123",
+	}
+
+	resp := procframe.NewAnyResponseWithMeta(msg, meta)
+
+	if got, ok := resp.Any().(*testResponse); !ok || got.Message != "hello" {
+		t.Fatalf("want *testResponse{hello}, got %T %v", resp.Any(), resp.Any())
+	}
+	if resp.Meta() == nil {
+		t.Fatal("want non-nil Meta")
+	}
+	if resp.Meta().Procedure != "/test.v1.Svc/Foo" {
+		t.Fatalf("want procedure /test.v1.Svc/Foo, got %q", resp.Meta().Procedure)
+	}
+	if resp.Meta().RequestID != "req-123" {
+		t.Fatalf("want request ID req-123, got %q", resp.Meta().RequestID)
+	}
+}
+
+type ctxKey string
+
+func TestInterceptorAccessesConnContext(t *testing.T) {
+	t.Parallel()
+
+	marker := ctxKey("marker")
+
+	t.Run("Unary", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.WithValue(t.Context(), marker, "unary-val")
+		spec := procframe.CallSpec{
+			Procedure: "/test/Ctx",
+			Transport: procframe.TransportCLI,
+			Shape:     procframe.CallShapeUnary,
+		}
+
+		_, err := procframe.InvokeUnary(
+			ctx, spec,
+			&procframe.Request[testRequest]{Msg: &testRequest{Message: "hi"}},
+			func(_ context.Context, _ *procframe.Request[testRequest]) (*procframe.Response[testResponse], error) {
+				return &procframe.Response[testResponse]{Msg: &testResponse{Message: "ok"}}, nil
+			},
+			procframe.InterceptorFunc(func(next procframe.HandlerFunc) procframe.HandlerFunc {
+				return func(ctx context.Context, conn procframe.Conn) error {
+					v, ok := conn.Context().Value(marker).(string)
+					if !ok || v != "unary-val" {
+						t.Fatalf("want unary-val in conn context, got %q", v)
+					}
+					return next(ctx, conn)
+				}
+			}),
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("ClientStream", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.WithValue(t.Context(), marker, "cs-val")
+		stream := &sliceClientStream{
+			getCtx: func() context.Context { return ctx },
+			msgs:   []*testRequest{{Message: "a"}},
+		}
+
+		_, err := procframe.InvokeClientStream(
+			ctx,
+			procframe.CallSpec{
+				Procedure: "/test/Ctx",
+				Transport: procframe.TransportCLI,
+				Shape:     procframe.CallShapeClientStream,
+			},
+			stream,
+			func(_ context.Context, cs procframe.ClientStream[testRequest]) (*procframe.Response[testResponse], error) {
+				v, ok := cs.Context().Value(marker).(string)
+				if !ok || v != "cs-val" {
+					t.Fatalf("want cs-val in stream context, got %q", v)
+				}
+				for {
+					_, err := cs.Receive()
+					if errors.Is(err, io.EOF) {
+						break
+					}
+					if err != nil {
+						return nil, err
+					}
+				}
+				return &procframe.Response[testResponse]{Msg: &testResponse{Message: "ok"}}, nil
+			},
+			procframe.InterceptorFunc(func(next procframe.HandlerFunc) procframe.HandlerFunc {
+				return func(ctx context.Context, conn procframe.Conn) error {
+					v, ok := conn.Context().Value(marker).(string)
+					if !ok || v != "cs-val" {
+						t.Fatalf("want cs-val in conn context, got %q", v)
+					}
+					return next(ctx, conn)
+				}
+			}),
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("ServerStream", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.WithValue(t.Context(), marker, "ss-val")
+		stream := &collectingStream{
+			getCtx: func() context.Context { return ctx },
+		}
+
+		err := procframe.InvokeServerStream(
+			ctx,
+			procframe.CallSpec{
+				Procedure: "/test/Ctx",
+				Transport: procframe.TransportCLI,
+				Shape:     procframe.CallShapeServerStream,
+			},
+			&procframe.Request[testRequest]{Msg: &testRequest{Message: "hi"}},
+			stream,
+			func(_ context.Context, _ *procframe.Request[testRequest], ss procframe.ServerStream[testResponse]) error {
+				v, ok := ss.Context().Value(marker).(string)
+				if !ok || v != "ss-val" {
+					t.Fatalf("want ss-val in stream context, got %q", v)
+				}
+				return nil
+			},
+			procframe.InterceptorFunc(func(next procframe.HandlerFunc) procframe.HandlerFunc {
+				return func(ctx context.Context, conn procframe.Conn) error {
+					v, ok := conn.Context().Value(marker).(string)
+					if !ok || v != "ss-val" {
+						t.Fatalf("want ss-val in conn context, got %q", v)
+					}
+					return next(ctx, conn)
+				}
+			}),
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("Bidi", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.WithValue(t.Context(), marker, "bidi-val")
+		stream := &sliceBidiStream{
+			getCtx: func() context.Context { return ctx },
+			msgs:   []*testRequest{{Message: "a"}},
+		}
+
+		err := procframe.InvokeBidi(
+			ctx,
+			procframe.CallSpec{
+				Procedure: "/test/Ctx",
+				Transport: procframe.TransportCLI,
+				Shape:     procframe.CallShapeBidi,
+			},
+			stream,
+			func(_ context.Context, bs procframe.BidiStream[testRequest, testResponse]) error {
+				v, ok := bs.Context().Value(marker).(string)
+				if !ok || v != "bidi-val" {
+					t.Fatalf("want bidi-val in stream context, got %q", v)
+				}
+				for {
+					_, err := bs.Receive()
+					if errors.Is(err, io.EOF) {
+						return nil
+					}
+					if err != nil {
+						return err
+					}
+				}
+			},
+			procframe.InterceptorFunc(func(next procframe.HandlerFunc) procframe.HandlerFunc {
+				return func(ctx context.Context, conn procframe.Conn) error {
+					v, ok := conn.Context().Value(marker).(string)
+					if !ok || v != "bidi-val" {
+						t.Fatalf("want bidi-val in conn context, got %q", v)
+					}
+					if conn.Spec().Shape != procframe.CallShapeBidi {
+						t.Fatalf("want shape bidi, got %q", conn.Spec().Shape)
+					}
+					return next(ctx, conn)
+				}
+			}),
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestInterceptorAccessesRequestMetaAndSpec(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Unary", func(t *testing.T) {
+		t.Parallel()
+		spec := procframe.CallSpec{
+			Procedure: "/test.v1.Svc/MetaSpec",
+			Transport: procframe.TransportConnect,
+			Shape:     procframe.CallShapeUnary,
+		}
+		req := &procframe.Request[testRequest]{
+			Msg:  &testRequest{Message: "hi"},
+			Meta: procframe.Meta{Procedure: spec.Procedure, RequestID: "rid-1"},
+		}
+
+		_, err := procframe.InvokeUnary(
+			t.Context(), spec, req,
+			func(_ context.Context, _ *procframe.Request[testRequest]) (*procframe.Response[testResponse], error) {
+				return &procframe.Response[testResponse]{Msg: &testResponse{Message: "ok"}}, nil
+			},
+			procframe.InterceptorFunc(func(next procframe.HandlerFunc) procframe.HandlerFunc {
+				return func(ctx context.Context, conn procframe.Conn) error {
+					// Wrap Receive to inspect the request without consuming it from inner handler's perspective.
+					return next(ctx, &modifyReceiveConn{
+						Conn: conn,
+						modify: func(anyReq procframe.AnyRequest) {
+							if anyReq.Meta() == nil {
+								t.Fatal("want non-nil Meta from AnyRequest")
+							}
+							if anyReq.Meta().Procedure != spec.Procedure {
+								t.Fatalf("want procedure %q, got %q", spec.Procedure, anyReq.Meta().Procedure)
+							}
+							if anyReq.Meta().RequestID != "rid-1" {
+								t.Fatalf("want request ID rid-1, got %q", anyReq.Meta().RequestID)
+							}
+							if anyReq.Spec().Transport != procframe.TransportConnect {
+								t.Fatalf("want transport connect, got %q", anyReq.Spec().Transport)
+							}
+							if anyReq.Spec().Shape != procframe.CallShapeUnary {
+								t.Fatalf("want shape unary, got %q", anyReq.Spec().Shape)
+							}
+						},
+					})
+				}
+			}),
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("ServerStream", func(t *testing.T) {
+		t.Parallel()
+		spec := procframe.CallSpec{
+			Procedure: "/test.v1.Svc/SSSpec",
+			Transport: procframe.TransportWS,
+			Shape:     procframe.CallShapeServerStream,
+		}
+
+		err := procframe.InvokeServerStream(
+			t.Context(), spec,
+			&procframe.Request[testRequest]{Msg: &testRequest{Message: "hi"}},
+			&collectingStream{getCtx: t.Context},
+			func(_ context.Context, _ *procframe.Request[testRequest], _ procframe.ServerStream[testResponse]) error {
+				return nil
+			},
+			procframe.InterceptorFunc(func(next procframe.HandlerFunc) procframe.HandlerFunc {
+				return func(ctx context.Context, conn procframe.Conn) error {
+					if conn.Spec().Transport != procframe.TransportWS {
+						t.Fatalf("want transport ws, got %q", conn.Spec().Transport)
+					}
+					if conn.Spec().Shape != procframe.CallShapeServerStream {
+						t.Fatalf("want shape server_stream, got %q", conn.Spec().Shape)
+					}
+					return next(ctx, conn)
+				}
+			}),
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
+}
+
+func TestInterceptorAccessesResponseMeta(t *testing.T) {
+	t.Parallel()
+
+	spec := procframe.CallSpec{
+		Procedure: "/test.v1.Svc/ResMeta",
+		Transport: procframe.TransportCLI,
+		Shape:     procframe.CallShapeUnary,
+	}
+
+	var capturedMeta *procframe.Meta
+
+	_, err := procframe.InvokeUnary(
+		t.Context(), spec,
+		&procframe.Request[testRequest]{Msg: &testRequest{Message: "hi"}},
+		func(_ context.Context, _ *procframe.Request[testRequest]) (*procframe.Response[testResponse], error) {
+			return &procframe.Response[testResponse]{
+				Msg:  &testResponse{Message: "ok"},
+				Meta: procframe.Meta{Procedure: spec.Procedure, RequestID: "resp-rid"},
+			}, nil
+		},
+		procframe.InterceptorFunc(func(next procframe.HandlerFunc) procframe.HandlerFunc {
+			return func(ctx context.Context, conn procframe.Conn) error {
+				return next(ctx, &modifySendConn{
+					Conn: conn,
+					modify: func(resp procframe.AnyResponse) {
+						capturedMeta = resp.Meta()
+					},
+				})
+			}
+		}),
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if capturedMeta == nil {
+		t.Fatal("want non-nil Meta from AnyResponse")
+	}
+	if capturedMeta.Procedure != spec.Procedure {
+		t.Fatalf("want procedure %q, got %q", spec.Procedure, capturedMeta.Procedure)
+	}
+	if capturedMeta.RequestID != "resp-rid" {
+		t.Fatalf("want request ID resp-rid, got %q", capturedMeta.RequestID)
+	}
+}
+
+func TestCastRequest_InterceptorReplacesRequest(t *testing.T) {
+	t.Parallel()
+
+	spec := procframe.CallSpec{
+		Procedure: "/test.v1.Svc/Cast",
+		Transport: procframe.TransportCLI,
+		Shape:     procframe.CallShapeUnary,
+	}
+
+	t.Run("happy", func(t *testing.T) {
+		t.Parallel()
+		customMeta := procframe.Meta{Procedure: spec.Procedure, RequestID: "custom-rid"}
+
+		var handlerMsg string
+		var handlerMeta procframe.Meta
+
+		_, err := procframe.InvokeUnary(
+			t.Context(), spec,
+			&procframe.Request[testRequest]{Msg: &testRequest{Message: "original"}},
+			func(_ context.Context, req *procframe.Request[testRequest]) (*procframe.Response[testResponse], error) {
+				handlerMsg = req.Msg.Message
+				handlerMeta = req.Meta
+				return &procframe.Response[testResponse]{Msg: &testResponse{Message: "ok"}}, nil
+			},
+			procframe.InterceptorFunc(func(next procframe.HandlerFunc) procframe.HandlerFunc {
+				return func(ctx context.Context, conn procframe.Conn) error {
+					return next(ctx, &replaceReceiveConn{
+						Conn: conn,
+						recv: func() (procframe.AnyRequest, error) {
+							return &fakeAnyRequest{
+								any:  &testRequest{Message: "replaced"},
+								meta: &customMeta,
+								spec: spec,
+							}, nil
+						},
+					})
+				}
+			}),
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if handlerMsg != "replaced" {
+			t.Fatalf("want replaced, got %q", handlerMsg)
+		}
+		if handlerMeta.RequestID != "custom-rid" {
+			t.Fatalf("want custom-rid, got %q", handlerMeta.RequestID)
+		}
+	})
+
+	t.Run("nil_meta", func(t *testing.T) {
+		t.Parallel()
+
+		var handlerMeta procframe.Meta
+
+		_, err := procframe.InvokeUnary(
+			t.Context(), spec,
+			&procframe.Request[testRequest]{Msg: &testRequest{Message: "original"}},
+			func(_ context.Context, req *procframe.Request[testRequest]) (*procframe.Response[testResponse], error) {
+				handlerMeta = req.Meta
+				return &procframe.Response[testResponse]{Msg: &testResponse{Message: "ok"}}, nil
+			},
+			procframe.InterceptorFunc(func(next procframe.HandlerFunc) procframe.HandlerFunc {
+				return func(ctx context.Context, conn procframe.Conn) error {
+					return next(ctx, &replaceReceiveConn{
+						Conn: conn,
+						recv: func() (procframe.AnyRequest, error) {
+							return &fakeAnyRequest{
+								any:  &testRequest{Message: "replaced"},
+								meta: nil,
+								spec: spec,
+							}, nil
+						},
+					})
+				}
+			}),
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if handlerMeta.Procedure != "" || handlerMeta.RequestID != "" || handlerMeta.SessionID != "" ||
+			handlerMeta.Labels != nil {
+			t.Fatalf("want zero Meta, got %+v", handlerMeta)
+		}
+	})
+
+	t.Run("type_mismatch", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := procframe.InvokeUnary(
+			t.Context(), spec,
+			&procframe.Request[testRequest]{Msg: &testRequest{Message: "original"}},
+			func(_ context.Context, _ *procframe.Request[testRequest]) (*procframe.Response[testResponse], error) {
+				t.Fatal("handler must not run")
+				return nil, nil
+			},
+			procframe.InterceptorFunc(func(next procframe.HandlerFunc) procframe.HandlerFunc {
+				return func(ctx context.Context, conn procframe.Conn) error {
+					return next(ctx, &replaceReceiveConn{
+						Conn: conn,
+						recv: func() (procframe.AnyRequest, error) {
+							return &fakeAnyRequest{
+								any:  ptrTo("wrong type"),
+								spec: spec,
+							}, nil
+						},
+					})
+				}
+			}),
+		)
+		if err == nil {
+			t.Fatal("expected error for type mismatch")
+		}
+		code, ok := procframe.CodeOf(err)
+		if !ok || code != procframe.CodeInternal {
+			t.Fatalf("want internal, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "unexpected request type") {
+			t.Fatalf("want 'unexpected request type' in error, got %q", err.Error())
+		}
+	})
+
+	t.Run("nil_request", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := procframe.InvokeUnary(
+			t.Context(), spec,
+			&procframe.Request[testRequest]{Msg: &testRequest{Message: "original"}},
+			func(_ context.Context, _ *procframe.Request[testRequest]) (*procframe.Response[testResponse], error) {
+				t.Fatal("handler must not run")
+				return nil, nil
+			},
+			procframe.InterceptorFunc(func(next procframe.HandlerFunc) procframe.HandlerFunc {
+				return func(ctx context.Context, conn procframe.Conn) error {
+					return next(ctx, &replaceReceiveConn{
+						Conn: conn,
+						recv: func() (procframe.AnyRequest, error) {
+							return nil, nil
+						},
+					})
+				}
+			}),
+		)
+		if err == nil {
+			t.Fatal("expected error for nil request")
+		}
+		code, ok := procframe.CodeOf(err)
+		if !ok || code != procframe.CodeInternal {
+			t.Fatalf("want internal, got %v", err)
+		}
+		if !strings.Contains(err.Error(), "nil request") {
+			t.Fatalf("want 'nil request' in error, got %q", err.Error())
+		}
+	})
+}
+
+func TestInvokeClientStream_HandlerErrorAndNilResponse(t *testing.T) {
+	t.Parallel()
+
+	spec := procframe.CallSpec{
+		Procedure: "/test.v1.Svc/CSErr",
+		Transport: procframe.TransportConnect,
+		Shape:     procframe.CallShapeClientStream,
+	}
+
+	t.Run("handler_error", func(t *testing.T) {
+		t.Parallel()
+		stream := &sliceClientStream{
+			getCtx: t.Context,
+			msgs:   []*testRequest{{Message: "a"}},
+		}
+
+		_, err := procframe.InvokeClientStream(
+			t.Context(), spec, stream,
+			func(_ context.Context, _ procframe.ClientStream[testRequest]) (*procframe.Response[testResponse], error) {
+				return nil, procframe.NewError(procframe.CodeNotFound, "not found")
+			},
+		)
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		code, ok := procframe.CodeOf(err)
+		if !ok || code != procframe.CodeNotFound {
+			t.Fatalf("want not_found, got %v", err)
+		}
+	})
+
+	t.Run("nil_response", func(t *testing.T) {
+		t.Parallel()
+		stream := &sliceClientStream{
+			getCtx: t.Context,
+			msgs:   []*testRequest{{Message: "a"}},
+		}
+
+		resp, err := procframe.InvokeClientStream(
+			t.Context(), spec, stream,
+			func(_ context.Context, _ procframe.ClientStream[testRequest]) (*procframe.Response[testResponse], error) {
+				return nil, nil
+			},
+		)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp != nil {
+			t.Fatalf("want nil response, got %+v", resp)
+		}
+	})
+}
+
 // --- helpers ---
 
 func ptrTo[T any](v T) *T { return &v }
+
+// fakeAnyRequest implements procframe.AnyRequest with configurable returns.
+type fakeAnyRequest struct {
+	any  any
+	meta *procframe.Meta
+	spec procframe.CallSpec
+}
+
+func (f *fakeAnyRequest) Any() any                 { return f.any }
+func (f *fakeAnyRequest) Meta() *procframe.Meta    { return f.meta }
+func (f *fakeAnyRequest) Spec() procframe.CallSpec { return f.spec }
+
+// replaceReceiveConn overrides Receive() on a wrapped Conn.
+type replaceReceiveConn struct {
+	procframe.Conn
+	recv func() (procframe.AnyRequest, error)
+}
+
+func (c *replaceReceiveConn) Receive() (procframe.AnyRequest, error) {
+	return c.recv()
+}
 
 type fakeServerStream[T any] struct {
 	t *testing.T
