@@ -1,44 +1,44 @@
 # KV Quickstart
 
-In-memory key-value store で unary RPC と server-stream RPC を示す。
+In-memory key-value store demonstrating unary and server-stream RPC shapes.
 
 ## RPC
 
-| Command | Shape | 概要 |
-|---------|-------|------|
-| `kv get --key <key>` | unary | キーで値を取得。未存在は `NotFound` エラー |
-| `kv list --prefix <prefix>` | server-stream | prefix マッチするエントリをストリーム返却 |
+| Command | Shape | Description |
+|---------|-------|-------------|
+| `kv get --key <key>` | unary | Get a value by key. Returns `NotFound` error for missing keys |
+| `kv list --prefix <prefix>` | server-stream | Stream entries matching the given prefix |
 
 ## Usage
 
 ```bash
-# ビルド & 実行
+# Build & run
 make run
 
-# unary: 値を取得
+# Unary: get a value
 go run . kv get --key greeting
 
-# unary: 存在しないキー → NotFound エラー
+# Unary: missing key → NotFound error
 go run . kv get --key missing
 
-# server-stream: 全エントリ
+# Server-stream: all entries
 go run . kv list
 
-# server-stream: prefix フィルタ
+# Server-stream: prefix filter
 go run . kv list --prefix greeting
 
-# JSON 入力
+# JSON input
 go run . --json '{"key":"greeting"}' kv get
 
-# compact JSON 出力
+# Compact JSON output
 go run . --output json kv get --key greeting
 
-# NDJSON ストリーム出力
+# NDJSON stream output
 go run . --output json kv list
 
-# ヘルプ
+# Help
 go run . kv --help
 
-# スキーマ表示
+# Show schema
 go run . schema
 ```
