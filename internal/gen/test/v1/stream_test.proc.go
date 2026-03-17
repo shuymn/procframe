@@ -262,3 +262,21 @@ func (c *tickServiceConnectClient) Watch(ctx context.Context, req *connect1.Requ
 func NewTickServiceWSHandler(s *ws.Server, h TickServiceHandler) {
 	ws.HandleServerStream(s, "/test.v1.TickService/Watch", h.Watch)
 }
+
+// TickServiceWSClient is the client interface for TickService over WebSocket.
+type TickServiceWSClient interface {
+	Watch(ctx context.Context, req *TickRequest) (ws.ServerStream[TickResponse], error)
+}
+
+type tickServiceWSClient struct {
+	conn *ws.Conn
+}
+
+// NewTickServiceWSClient constructs a WebSocket client for TickService.
+func NewTickServiceWSClient(conn *ws.Conn) TickServiceWSClient {
+	return &tickServiceWSClient{conn: conn}
+}
+
+func (c *tickServiceWSClient) Watch(ctx context.Context, req *TickRequest) (ws.ServerStream[TickResponse], error) {
+	return ws.CallServerStream[TickRequest, TickResponse](ctx, c.conn, "/test.v1.TickService/Watch", req)
+}

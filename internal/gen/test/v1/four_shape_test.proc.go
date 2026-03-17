@@ -618,3 +618,36 @@ func NewFourShapeServiceWSHandler(s *ws.Server, h FourShapeServiceHandler) {
 	ws.HandleServerStream(s, "/test.v1.FourShapeService/Feed", h.Feed)
 	ws.HandleBidi(s, "/test.v1.FourShapeService/Chat", h.Chat)
 }
+
+// FourShapeServiceWSClient is the client interface for FourShapeService over WebSocket.
+type FourShapeServiceWSClient interface {
+	Ping(ctx context.Context, req *CollectRequest) (*CollectResponse, error)
+	Collect(ctx context.Context) (ws.ClientStream[CollectRequest, CollectResponse], error)
+	Feed(ctx context.Context, req *CollectRequest) (ws.ServerStream[ChatReply], error)
+	Chat(ctx context.Context) (ws.BidiStream[ChatMessage, ChatReply], error)
+}
+
+type fourShapeServiceWSClient struct {
+	conn *ws.Conn
+}
+
+// NewFourShapeServiceWSClient constructs a WebSocket client for FourShapeService.
+func NewFourShapeServiceWSClient(conn *ws.Conn) FourShapeServiceWSClient {
+	return &fourShapeServiceWSClient{conn: conn}
+}
+
+func (c *fourShapeServiceWSClient) Ping(ctx context.Context, req *CollectRequest) (*CollectResponse, error) {
+	return ws.CallUnary[CollectRequest, CollectResponse](ctx, c.conn, "/test.v1.FourShapeService/Ping", req)
+}
+
+func (c *fourShapeServiceWSClient) Collect(ctx context.Context) (ws.ClientStream[CollectRequest, CollectResponse], error) {
+	return ws.CallClientStream[CollectRequest, CollectResponse](ctx, c.conn, "/test.v1.FourShapeService/Collect")
+}
+
+func (c *fourShapeServiceWSClient) Feed(ctx context.Context, req *CollectRequest) (ws.ServerStream[ChatReply], error) {
+	return ws.CallServerStream[CollectRequest, ChatReply](ctx, c.conn, "/test.v1.FourShapeService/Feed", req)
+}
+
+func (c *fourShapeServiceWSClient) Chat(ctx context.Context) (ws.BidiStream[ChatMessage, ChatReply], error) {
+	return ws.CallBidi[ChatMessage, ChatReply](ctx, c.conn, "/test.v1.FourShapeService/Chat")
+}

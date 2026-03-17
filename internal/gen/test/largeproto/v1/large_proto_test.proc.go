@@ -821,3 +821,36 @@ func NewLargeProtoServiceWSHandler(s *ws.Server, h LargeProtoServiceHandler) {
 	ws.HandleServerStream(s, "/test.largeproto.v1.LargeProtoService/WatchSpans", h.WatchSpans)
 	ws.HandleBidi(s, "/test.largeproto.v1.LargeProtoService/StreamSpans", h.StreamSpans)
 }
+
+// LargeProtoServiceWSClient is the client interface for LargeProtoService over WebSocket.
+type LargeProtoServiceWSClient interface {
+	IngestSpan(ctx context.Context, req *IngestSpanRequest) (*IngestSpanResponse, error)
+	CollectSpans(ctx context.Context) (ws.ClientStream[CollectSpanRequest, CollectSpansResponse], error)
+	WatchSpans(ctx context.Context, req *WatchSpansRequest) (ws.ServerStream[WatchSpanEvent], error)
+	StreamSpans(ctx context.Context) (ws.BidiStream[CollectSpanRequest, WatchSpanEvent], error)
+}
+
+type largeProtoServiceWSClient struct {
+	conn *ws.Conn
+}
+
+// NewLargeProtoServiceWSClient constructs a WebSocket client for LargeProtoService.
+func NewLargeProtoServiceWSClient(conn *ws.Conn) LargeProtoServiceWSClient {
+	return &largeProtoServiceWSClient{conn: conn}
+}
+
+func (c *largeProtoServiceWSClient) IngestSpan(ctx context.Context, req *IngestSpanRequest) (*IngestSpanResponse, error) {
+	return ws.CallUnary[IngestSpanRequest, IngestSpanResponse](ctx, c.conn, "/test.largeproto.v1.LargeProtoService/IngestSpan", req)
+}
+
+func (c *largeProtoServiceWSClient) CollectSpans(ctx context.Context) (ws.ClientStream[CollectSpanRequest, CollectSpansResponse], error) {
+	return ws.CallClientStream[CollectSpanRequest, CollectSpansResponse](ctx, c.conn, "/test.largeproto.v1.LargeProtoService/CollectSpans")
+}
+
+func (c *largeProtoServiceWSClient) WatchSpans(ctx context.Context, req *WatchSpansRequest) (ws.ServerStream[WatchSpanEvent], error) {
+	return ws.CallServerStream[WatchSpansRequest, WatchSpanEvent](ctx, c.conn, "/test.largeproto.v1.LargeProtoService/WatchSpans", req)
+}
+
+func (c *largeProtoServiceWSClient) StreamSpans(ctx context.Context) (ws.BidiStream[CollectSpanRequest, WatchSpanEvent], error) {
+	return ws.CallBidi[CollectSpanRequest, WatchSpanEvent](ctx, c.conn, "/test.largeproto.v1.LargeProtoService/StreamSpans")
+}

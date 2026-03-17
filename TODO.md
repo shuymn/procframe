@@ -31,6 +31,24 @@
   - Status: `resolved`
   - Decision: `New{Service}ConnectClient`。サーバー側 `New{Service}ConnectHandler` と対称。将来 WS クライアントを追加した場合に名前空間が衝突しない。
 
+- Question: WS クライアントのインターフェース型: raw proto vs wrapper
+  - Class: `blocking`
+  - Resolution: `decision`
+  - Status: `resolved`
+  - Decision: raw proto。WS に wrapper 型を作る利点が薄い。最もエルゴノミック。
+
+- Question: WS クライアントの Connection ownership: caller 提供 vs 内部管理
+  - Class: `blocking`
+  - Resolution: `decision`
+  - Status: `resolved`
+  - Decision: caller 提供 (`*ws.Conn`)。Connect client と同様、caller がライフサイクルを管理。
+
+- Question: `Conn` vs `ClientConn` 命名
+  - Class: `non-blocking`
+  - Resolution: `decision`
+  - Status: `resolved`
+  - Decision: `Conn`。サーバー側は `Server` であり、同パッケージ内で `Conn` は明確。
+
 ## Deferred Questions
 
 - Question: WS frame の正式 schema
@@ -205,3 +223,44 @@
   - Executable doc: `TestIntegration_ConnectClientUnary`, `TestIntegration_ConnectClientClientStream`, `TestIntegration_ConnectClientServerStream`, `TestIntegration_ConnectClientBidi`, `TestIntegration_ConnectClientOptOut`
   - Why not split vertically further?: クライアントインターフェース、実装構造体、コンストラクタは同一の codegen パスを構成し、いずれか単体では Connect クライアントが使用可能にならないため
   - Escalate if: `connectrpc.com/connect` の `Client[Req, Res]` 型が shape ごとに異なる呼び出しメソッドを持つ設計により、単一の generated interface で全 shape を型安全に統一できない場合
+
+- [x] Theme: WS Client Runtime + Codegen
+  - Outcome: `ws.enabled = true` のメソッドに対し、型付き WS クライアントが codegen で自動生成され、
+    multiplexed WS 接続上で全 4 RPC shape を型安全に呼び出せる
+  - Goal: transport/ws にクライアントランタイム (Conn, stream types, Call functions) を実装し、
+    codegen による New{Service}WSClient 生成を追加する
+  - Must Not Break: 既存 handler interface の signature, CLI/Connect/WS server transport の動作,
+    codegen の既存出力, error code 体系, proto option の後方互換性
+  - Non-goals: client-side interceptor (ADR-007 deferred), reconnection/retry, バイナリフレーム,
+    ping/pong heartbeat, compression, 新しい proto option の追加
+  - Acceptance (EARS):
+    - When a method has ws.enabled = true, the codegen shall include that method in the
+      {Service}WSClient interface and New{Service}WSClient constructor
+    - When a method has ws.enabled = false (default), the codegen shall exclude that method
+    - When no methods have ws.enabled = true, the codegen shall not produce a WS client
+    - When New{Service}WSClient is called with a ws.Conn, the returned client shall provide
+      typed method calls for each WS-enabled RPC
+    - When a unary client method is called, it shall open a session, send the request,
+      and return the single response or error
+    - When a server-stream client method is called, it shall return a ServerStream
+      whose Receive returns successive messages and io.EOF on close
+    - When a client-stream client method is called, it shall return a ClientStream
+      whose Send transmits messages and CloseAndReceive returns the response
+    - When a bidi client method is called, it shall return a BidiStream
+      supporting concurrent Send and Receive
+    - When the server sends an error frame, the client shall surface it as
+      *procframe.StatusError with the correct code, message, and retryable flag
+    - When the WS connection is lost, all active sessions shall return an error
+    - When the caller cancels ctx, the client shall send a cancel frame and unblock pending Receive
+  - Evidence: `run=task check; oracle=generated WS client compiles, round-trip tests pass
+    for all four RPC shapes, error frames → StatusError, disconnect propagates, cancel propagates;
+    visibility=independent; controls=[agent,context]; missing=[]; companion=none`
+  - Gates: `static`, `integration`
+  - Executable doc: TestIntegration_WSClientUnary, TestIntegration_WSClientServerStream,
+    TestIntegration_WSClientClientStream, TestIntegration_WSClientBidi,
+    TestIntegration_WSClientError, TestIntegration_WSClientDisconnect,
+    TestIntegration_WSClientCancel, TestIntegration_WSClientOptOut
+  - Why not split vertically further?: runtime (Conn, stream types, Call functions) と
+    codegen は同時に機能して初めて WS クライアント RPC が成立する
+  - Escalate if: Go の type parameter 制約により package-level generic Call functions が
+    protojson marshal/unmarshal と proto.Message constraint の間で型安全に橋渡しできない場合

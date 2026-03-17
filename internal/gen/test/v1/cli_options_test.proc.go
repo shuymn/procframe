@@ -458,3 +458,21 @@ func (c *cliOptionsTestServiceConnectClient) ExplicitEnabled(ctx context.Context
 func NewCliOptionsTestServiceWSHandler(s *ws.Server, h CliOptionsTestServiceHandler) {
 	ws.HandleUnary(s, "/test.v1.CliOptionsTestService/WsEnabled", h.WsEnabled)
 }
+
+// CliOptionsTestServiceWSClient is the client interface for CliOptionsTestService over WebSocket.
+type CliOptionsTestServiceWSClient interface {
+	WsEnabled(ctx context.Context, req *PingRequest) (*PingResponse, error)
+}
+
+type cliOptionsTestServiceWSClient struct {
+	conn *ws.Conn
+}
+
+// NewCliOptionsTestServiceWSClient constructs a WebSocket client for CliOptionsTestService.
+func NewCliOptionsTestServiceWSClient(conn *ws.Conn) CliOptionsTestServiceWSClient {
+	return &cliOptionsTestServiceWSClient{conn: conn}
+}
+
+func (c *cliOptionsTestServiceWSClient) WsEnabled(ctx context.Context, req *PingRequest) (*PingResponse, error) {
+	return ws.CallUnary[PingRequest, PingResponse](ctx, c.conn, "/test.v1.CliOptionsTestService/WsEnabled", req)
+}

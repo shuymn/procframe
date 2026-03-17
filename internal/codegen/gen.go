@@ -47,6 +47,7 @@ func Generate(plugin *protogen.Plugin, file *protogen.File, params *Params) erro
 		}
 		if hasWsMethods(svcInfo) {
 			generateWS(g, svc, svcInfo)
+			generateWSClient(g, svc, svcInfo)
 		}
 	}
 

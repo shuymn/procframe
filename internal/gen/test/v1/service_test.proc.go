@@ -277,3 +277,21 @@ func (c *echoServiceConnectClient) Echo(ctx context.Context, req *connect1.Reque
 func NewEchoServiceWSHandler(s *ws.Server, h EchoServiceHandler) {
 	ws.HandleUnary(s, "/test.v1.EchoService/Echo", h.Echo)
 }
+
+// EchoServiceWSClient is the client interface for EchoService over WebSocket.
+type EchoServiceWSClient interface {
+	Echo(ctx context.Context, req *EchoRequest) (*EchoResponse, error)
+}
+
+type echoServiceWSClient struct {
+	conn *ws.Conn
+}
+
+// NewEchoServiceWSClient constructs a WebSocket client for EchoService.
+func NewEchoServiceWSClient(conn *ws.Conn) EchoServiceWSClient {
+	return &echoServiceWSClient{conn: conn}
+}
+
+func (c *echoServiceWSClient) Echo(ctx context.Context, req *EchoRequest) (*EchoResponse, error) {
+	return ws.CallUnary[EchoRequest, EchoResponse](ctx, c.conn, "/test.v1.EchoService/Echo", req)
+}
