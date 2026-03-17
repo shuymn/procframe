@@ -65,3 +65,36 @@ func TestValidateDuplicatePaths(t *testing.T) {
 		}
 	})
 }
+
+// TestValidateDuplicatePaths_EdgeCases probes the path
+// validation with edge cases.
+func TestValidateDuplicatePaths_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty_services", func(t *testing.T) {
+		t.Parallel()
+		err := validateDuplicatePaths(nil)
+		if err != nil {
+			t.Fatalf("unexpected error for nil services: %v", err)
+		}
+	})
+
+	t.Run("empty_path_segments", func(t *testing.T) {
+		t.Parallel()
+		services := []serviceInfo{
+			{
+				Methods: []methodInfo{
+					{CLI: true, Path: []string{}, FullName: "/a"},
+					{CLI: true, Path: []string{}, FullName: "/b"},
+				},
+			},
+		}
+		// Both methods have empty path -> both resolve to ""
+		// -> duplicate detected.
+		err := validateDuplicatePaths(services)
+		if err == nil {
+			t.Fatal("expected duplicate error for empty paths")
+		}
+		checkNoInternalLeak(t, err.Error())
+	})
+}
