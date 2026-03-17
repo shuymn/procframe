@@ -79,3 +79,62 @@ func TestUnmarshalJSONField_NilMessage(t *testing.T) {
 		t.Log("UnmarshalJSONField(nil) returned no error")
 	}
 }
+
+// TestUnmarshalJSONField_RejectsSiblingInjection verifies whether crafted JSON input
+// for a message-type flag can inject values into sibling fields via
+// UnmarshalJSONField's string concatenation wrapper.
+//
+// UnmarshalJSONField wraps rawJSON as: {"fieldName":rawJSON}
+// If rawJSON contains '},"otherField":value', the wrapper becomes:
+//
+//	{"fieldName":...},"otherField":value}
+//
+// which is valid JSON with multiple top-level keys.
+func TestUnmarshalJSONField_RejectsSiblingInjection(t *testing.T) {
+	t.Parallel()
+
+	t.Run("sibling_field_injection", func(t *testing.T) {
+		t.Parallel()
+
+		// Start with limit=3 (simulating --limit 3 flag).
+		req := &testv1.PRListRequest{Limit: 3}
+
+		// Crafted repo JSON that attempts to inject a limit override.
+		// wrapped = {"repo":{"org":"myorg"},"limit":999}
+		crafted := `{"org":"myorg"},"limit":999`
+
+		err := cli.UnmarshalJSONField(req, "repo", crafted)
+		if err != nil {
+			// protojson rejected the malformed JSON → DEFENDED.
+			t.Logf("DEFENDED: protojson rejected crafted input: %v", err)
+			return
+		}
+
+		// Check if the sibling field was overwritten.
+		if req.Limit != 3 {
+			t.Errorf("VULNERABLE: limit changed from 3 to %d via repo field injection", req.Limit)
+		}
+	})
+
+	t.Run("bind_into_field_injection", func(t *testing.T) {
+		t.Parallel()
+
+		// PRScope has primaryLabel (message) and state (enum).
+		// Test if crafting primaryLabel JSON can inject state.
+		scope := &testv1.PRScope{State: testv1.PRState_PR_STATE_OPEN}
+
+		// Attempt to inject state override via primaryLabel field.
+		// wrapped = {"primaryLabel":{"key":"v"},"state":"PR_STATE_CLOSED"}
+		crafted := `{"key":"v"},"state":"PR_STATE_CLOSED"`
+
+		err := cli.UnmarshalJSONField(scope, "primaryLabel", crafted)
+		if err != nil {
+			t.Logf("DEFENDED: protojson rejected crafted input: %v", err)
+			return
+		}
+
+		if scope.State != testv1.PRState_PR_STATE_OPEN {
+			t.Errorf("VULNERABLE: state changed from OPEN to %v via primaryLabel injection", scope.State)
+		}
+	})
+}
