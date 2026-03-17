@@ -1659,3 +1659,963 @@ func TestIntegration_WSRapidOpenClose(t *testing.T) {
 		t.Fatalf("expected at least %d responses, got %d", iterations, responded)
 	}
 }
+
+// ============================================================
+// WS Client — Helpers
+// ============================================================
+
+func startWSClientConn(t *testing.T, s *ws.Server) *ws.Conn {
+	t.Helper()
+
+	mux := http.NewServeMux()
+	mux.Handle("/ws", s)
+
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	ctx := t.Context()
+	wsURL := "ws" + srv.URL[len("http"):] + "/ws"
+	//nolint:bodyclose // coder/websocket manages resp.Body internally
+	c, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() {
+		c.CloseNow() //nolint:errcheck // best-effort cleanup; error not actionable in cleanup
+	})
+
+	conn := ws.NewConn(ctx, c)
+	return conn
+}
+
+// ============================================================
+// WS Client — Unary
+// ============================================================
+
+func TestIntegration_WSClientUnary(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	testv1.NewFourShapeServiceWSHandler(s, &fourShapeHandler{})
+
+	conn := startWSClientConn(t, s)
+	client := testv1.NewFourShapeServiceWSClient(conn)
+
+	resp, err := client.Ping(t.Context(), &testv1.CollectRequest{Item: "hello"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Count != 1 {
+		t.Fatalf("want count=1, got %d", resp.Count)
+	}
+	if resp.Items != "hello" {
+		t.Fatalf("want items=hello, got %q", resp.Items)
+	}
+}
+
+// ============================================================
+// WS Client — Server Stream
+// ============================================================
+
+func TestIntegration_WSClientServerStream(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	testv1.NewFourShapeServiceWSHandler(s, &fourShapeHandler{})
+
+	conn := startWSClientConn(t, s)
+	client := testv1.NewFourShapeServiceWSClient(conn)
+
+	stream, err := client.Feed(t.Context(), &testv1.CollectRequest{Item: "a,b,c"})
+	if err != nil {
+		t.Fatalf("Feed: %v", err)
+	}
+
+	var msgs []string
+	for {
+		msg, rErr := stream.Receive()
+		if errors.Is(rErr, io.EOF) {
+			break
+		}
+		if rErr != nil {
+			t.Fatalf("Receive: %v", rErr)
+		}
+		msgs = append(msgs, msg.Text)
+	}
+
+	if len(msgs) != 3 {
+		t.Fatalf("want 3 messages, got %d: %v", len(msgs), msgs)
+	}
+	expected := []string{"a", "b", "c"}
+	for i, want := range expected {
+		if msgs[i] != want {
+			t.Fatalf("msg[%d]: want %q, got %q", i, want, msgs[i])
+		}
+	}
+}
+
+// ============================================================
+// WS Client — Client Stream
+// ============================================================
+
+func TestIntegration_WSClientClientStream(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	testv1.NewFourShapeServiceWSHandler(s, &fourShapeHandler{})
+
+	conn := startWSClientConn(t, s)
+	client := testv1.NewFourShapeServiceWSClient(conn)
+
+	stream, err := client.Collect(t.Context())
+	if err != nil {
+		t.Fatalf("Collect: %v", err)
+	}
+
+	for _, item := range []string{"x", "y", "z"} {
+		if sErr := stream.Send(&testv1.CollectRequest{Item: item}); sErr != nil {
+			t.Fatalf("Send %q: %v", item, sErr)
+		}
+	}
+
+	resp, err := stream.CloseAndReceive()
+	if err != nil {
+		t.Fatalf("CloseAndReceive: %v", err)
+	}
+	if resp.Count != 3 {
+		t.Fatalf("want count=3, got %d", resp.Count)
+	}
+	if resp.Items != "x,y,z" {
+		t.Fatalf("want items=x,y,z, got %q", resp.Items)
+	}
+}
+
+// ============================================================
+// WS Client — Bidi
+// ============================================================
+
+func TestIntegration_WSClientBidi(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	testv1.NewFourShapeServiceWSHandler(s, &fourShapeHandler{})
+
+	conn := startWSClientConn(t, s)
+	client := testv1.NewFourShapeServiceWSClient(conn)
+
+	stream, err := client.Chat(t.Context())
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+
+	inputs := []string{"hello", "world"}
+	for _, text := range inputs {
+		if sErr := stream.Send(&testv1.ChatMessage{Text: text}); sErr != nil {
+			t.Fatalf("Send %q: %v", text, sErr)
+		}
+		msg, rErr := stream.Receive()
+		if rErr != nil {
+			t.Fatalf("Receive: %v", rErr)
+		}
+		if msg.Text != "echo:"+text {
+			t.Fatalf("want echo:%s, got %q", text, msg.Text)
+		}
+	}
+
+	if cErr := stream.CloseSend(); cErr != nil {
+		t.Fatalf("CloseSend: %v", cErr)
+	}
+
+	// After CloseSend, server should close → Receive returns EOF.
+	_, rErr := stream.Receive()
+	if !errors.Is(rErr, io.EOF) {
+		t.Fatalf("want io.EOF after CloseSend, got %v", rErr)
+	}
+}
+
+// ============================================================
+// WS Client — Error
+// ============================================================
+
+func TestIntegration_WSClientError(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			_ context.Context,
+			_ *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			return nil, procframe.NewError(procframe.CodePermissionDenied, "forbidden").WithRetryable()
+		},
+	)
+
+	conn := startWSClientConn(t, s)
+
+	_, err := ws.CallUnary[testv1.EchoRequest, testv1.EchoResponse](
+		t.Context(), conn, "/test.v1.EchoService/Echo",
+		&testv1.EchoRequest{Message: "test"},
+	)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	var statusErr *procframe.StatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("expected StatusError, got %T: %v", err, err)
+	}
+	if statusErr.Code() != procframe.CodePermissionDenied {
+		t.Fatalf("want code=%s, got %s", procframe.CodePermissionDenied, statusErr.Code())
+	}
+	if statusErr.Message() != "forbidden" {
+		t.Fatalf("want message=forbidden, got %q", statusErr.Message())
+	}
+	if !statusErr.IsRetryable() {
+		t.Fatal("want retryable=true")
+	}
+}
+
+// ============================================================
+// WS Client — Disconnect
+// ============================================================
+
+func TestIntegration_WSClientDisconnect(t *testing.T) {
+	t.Parallel()
+
+	blocked := make(chan struct{})
+	s := ws.NewServer()
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			ctx context.Context,
+			_ *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			close(blocked)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle("/ws", s)
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ctx := t.Context()
+	wsURL := "ws" + srv.URL[len("http"):] + "/ws"
+	//nolint:bodyclose // coder/websocket manages resp.Body internally
+	rawConn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+
+	conn := ws.NewConn(ctx, rawConn)
+
+	// Start a blocking unary call in the background.
+	errCh := make(chan error, 1)
+	go func() {
+		_, callErr := ws.CallUnary[testv1.EchoRequest, testv1.EchoResponse](
+			ctx, conn, "/test.v1.EchoService/Echo",
+			&testv1.EchoRequest{Message: "block"},
+		)
+		errCh <- callErr
+	}()
+
+	// Wait for handler to start blocking, then forcefully close the WS
+	// connection. CloseNow avoids the close-handshake deadlock with the
+	// concurrent readLoop.
+	<-blocked
+	rawConn.CloseNow() //nolint:errcheck // intentional forced close
+
+	select {
+	case callErr := <-errCh:
+		if callErr == nil {
+			t.Fatal("expected error after disconnect")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("call did not return within 5 seconds after disconnect")
+	}
+}
+
+// ============================================================
+// WS Client — Cancel
+// ============================================================
+
+func TestIntegration_WSClientCancel(t *testing.T) {
+	t.Parallel()
+
+	handlerDone := make(chan struct{})
+	s := ws.NewServer()
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			ctx context.Context,
+			_ *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			<-ctx.Done()
+			close(handlerDone)
+			return nil, ctx.Err()
+		},
+	)
+
+	conn := startWSClientConn(t, s)
+
+	ctx, cancel := context.WithCancel(t.Context())
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, callErr := ws.CallUnary[testv1.EchoRequest, testv1.EchoResponse](
+			ctx, conn, "/test.v1.EchoService/Echo",
+			&testv1.EchoRequest{Message: "block"},
+		)
+		errCh <- callErr
+	}()
+
+	// Give the call time to reach the server handler.
+	time.Sleep(50 * time.Millisecond)
+
+	cancel()
+
+	select {
+	case callErr := <-errCh:
+		if callErr == nil {
+			t.Fatal("expected error after cancel")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("call did not return within 5 seconds after cancel")
+	}
+
+	// Server handler should also have been cancelled.
+	select {
+	case <-handlerDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("handler did not finish within 5 seconds after cancel")
+	}
+}
+
+// ============================================================
+// WS Client — OptOut
+// ============================================================
+
+func TestIntegration_WSClientOptOut(t *testing.T) {
+	t.Parallel()
+
+	// CliOptionsTestService has only WsEnabled with ws.enabled = true.
+	// The generated WSClient interface should only expose WsEnabled.
+	// Methods without ws.enabled should be absent.
+
+	s := ws.NewServer()
+	testv1.NewCliOptionsTestServiceWSHandler(s, &cliOptionsHandler{})
+
+	conn := startWSClientConn(t, s)
+	client := testv1.NewCliOptionsTestServiceWSClient(conn)
+
+	resp, err := client.WsEnabled(t.Context(), &testv1.PingRequest{Target: "via-ws-client"})
+	if err != nil {
+		t.Fatalf("WsEnabled: unexpected error: %v", err)
+	}
+	if resp.Result != "via-ws-client" {
+		t.Fatalf("want result=via-ws-client, got %q", resp.Result)
+	}
+
+	// DefaultEnabled, ExplicitEnabled, ExplicitDisabled are not in the
+	// CliOptionsTestServiceWSClient interface — compile-time verification.
+}
+
+// ============================================================
+// WS Client — Empty/nil inputs
+// ============================================================
+
+func TestIntegration_WSClientEmptyProcedure(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			_ context.Context,
+			req *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			return &procframe.Response[testv1.EchoResponse]{
+				Msg: &testv1.EchoResponse{Message: req.Msg.Message},
+			}, nil
+		},
+	)
+
+	conn := startWSClientConn(t, s)
+
+	// Call with empty procedure: server should return not_found error.
+	_, err := ws.CallUnary[testv1.EchoRequest, testv1.EchoResponse](
+		t.Context(), conn, "", &testv1.EchoRequest{Message: "test"},
+	)
+	if err == nil {
+		t.Fatal("expected error for empty procedure, got nil")
+	}
+	var statusErr *procframe.StatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("expected StatusError, got %T: %v", err, err)
+	}
+	if statusErr.Code() != procframe.CodeNotFound {
+		t.Fatalf("want code=not_found, got %s", statusErr.Code())
+	}
+}
+
+func TestIntegration_WSClientNilRequest(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			_ context.Context,
+			req *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			return &procframe.Response[testv1.EchoResponse]{
+				Msg: &testv1.EchoResponse{Message: req.Msg.Message},
+			}, nil
+		},
+	)
+
+	conn := startWSClientConn(t, s)
+
+	// Call with nil request. marshalProto should handle this gracefully
+	// (proto zero value) rather than panic.
+	resp, err := ws.CallUnary[testv1.EchoRequest, testv1.EchoResponse](
+		t.Context(), conn, "/test.v1.EchoService/Echo", nil,
+	)
+	// Either an error or a valid zero-value response is acceptable.
+	// A panic is NOT acceptable.
+	if err != nil {
+		return
+	}
+	if resp == nil {
+		t.Fatal("got nil response without error")
+	}
+}
+
+// ============================================================
+// WS Client — Malicious procedure strings
+// ============================================================
+
+func TestIntegration_WSClientProcedureInjection(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			_ context.Context,
+			req *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			return &procframe.Response[testv1.EchoResponse]{
+				Msg: &testv1.EchoResponse{Message: req.Msg.Message},
+			}, nil
+		},
+	)
+
+	conn := startWSClientConn(t, s)
+
+	maliciousProcedures := []string{
+		"/../../../etc/passwd",
+		"/test.v1.EchoService/Echo\x00injected",
+		"/test.v1.EchoService/Echo\r\nX-Injected: true",
+		"<script>alert(1)</script>",
+		"/test.v1.EchoService/Echo; DROP TABLE users;--",
+	}
+
+	for _, proc := range maliciousProcedures {
+		t.Run(proc, func(t *testing.T) {
+			_, err := ws.CallUnary[testv1.EchoRequest, testv1.EchoResponse](
+				t.Context(), conn, proc,
+				&testv1.EchoRequest{Message: "test"},
+			)
+			if err == nil {
+				t.Fatalf("expected error for malicious procedure %q, got nil", proc)
+			}
+			var statusErr *procframe.StatusError
+			if !errors.As(err, &statusErr) {
+				t.Fatalf("expected StatusError for %q, got %T: %v", proc, err, err)
+			}
+			if statusErr.Code() != procframe.CodeNotFound {
+				t.Fatalf("want code=not_found for %q, got %s", proc, statusErr.Code())
+			}
+		})
+	}
+}
+
+// ============================================================
+// WS Client — Concurrent sessions
+// ============================================================
+
+func TestIntegration_WSClientConcurrentSessions(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			_ context.Context,
+			req *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			return &procframe.Response[testv1.EchoResponse]{
+				Msg: &testv1.EchoResponse{Message: req.Msg.Message},
+			}, nil
+		},
+	)
+
+	conn := startWSClientConn(t, s)
+
+	const concurrency = 50
+	var wg sync.WaitGroup
+	wg.Add(concurrency)
+
+	errs := make(chan error, concurrency)
+
+	for i := range concurrency {
+		go func() {
+			defer wg.Done()
+			//nolint:gosec // G115: i is bounded by const concurrency=50
+			count := int32(i)
+			resp, err := ws.CallUnary[testv1.EchoRequest, testv1.EchoResponse](
+				t.Context(), conn, "/test.v1.EchoService/Echo",
+				&testv1.EchoRequest{Message: "concurrent", Count: count},
+			)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if resp.Message != "concurrent" {
+				errs <- errors.New("unexpected response message: " + resp.Message)
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("concurrent call error: %v", err)
+	}
+}
+
+// ============================================================
+// WS Client — Use after stream close
+// ============================================================
+
+func TestIntegration_WSClientUseAfterStreamClose(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	testv1.NewFourShapeServiceWSHandler(s, &fourShapeHandler{})
+
+	conn := startWSClientConn(t, s)
+	client := testv1.NewFourShapeServiceWSClient(conn)
+
+	stream, err := client.Feed(t.Context(), &testv1.CollectRequest{Item: "a"})
+	if err != nil {
+		t.Fatalf("Feed: %v", err)
+	}
+
+	// Drain all messages.
+	for {
+		_, rErr := stream.Receive()
+		if errors.Is(rErr, io.EOF) {
+			break
+		}
+		if rErr != nil {
+			t.Fatalf("Receive: %v", rErr)
+		}
+	}
+
+	// Receive after EOF — should not panic or hang.
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+
+	type result struct {
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		_, rErr := stream.Receive()
+		ch <- result{err: rErr}
+	}()
+
+	select {
+	case r := <-ch:
+		if r.err == nil {
+			t.Fatal("expected error on Receive after EOF, got nil")
+		}
+	case <-ctx.Done():
+		t.Fatal("Receive after EOF blocks indefinitely")
+	}
+
+	// Close after EOF — should be idempotent.
+	if cErr := stream.Close(); cErr != nil {
+		t.Fatalf("Close after EOF: %v", cErr)
+	}
+	if cErr := stream.Close(); cErr != nil {
+		t.Fatalf("double Close: %v", cErr)
+	}
+}
+
+// ============================================================
+// WS Client — Partial send failure
+// ============================================================
+
+func TestIntegration_WSClientPartialSendFailure(t *testing.T) {
+	t.Parallel()
+
+	started := make(chan struct{})
+	s := ws.NewServer()
+	ws.HandleUnary(s, "/test.v1.EchoService/Echo",
+		func(
+			ctx context.Context,
+			_ *procframe.Request[testv1.EchoRequest],
+		) (*procframe.Response[testv1.EchoResponse], error) {
+			close(started)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle("/ws", s)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ctx := t.Context()
+	wsURL := "ws" + srv.URL[len("http"):] + "/ws"
+	//nolint:bodyclose // coder/websocket manages resp.Body internally
+	rawConn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+
+	conn := ws.NewConn(ctx, rawConn)
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, callErr := ws.CallUnary[testv1.EchoRequest, testv1.EchoResponse](
+			ctx, conn, "/test.v1.EchoService/Echo",
+			&testv1.EchoRequest{Message: "first"},
+		)
+		errCh <- callErr
+	}()
+
+	// Wait for handler to start, then kill the connection.
+	<-started
+	rawConn.CloseNow() //nolint:errcheck // intentional forced close
+
+	select {
+	case callErr := <-errCh:
+		if callErr == nil {
+			t.Fatal("expected error after connection drop, got nil")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("first call did not return within 5 seconds")
+	}
+
+	// Second call on the dead connection should fail immediately.
+	ctx2, cancel2 := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel2()
+
+	_, err = ws.CallUnary[testv1.EchoRequest, testv1.EchoResponse](
+		ctx2, conn, "/test.v1.EchoService/Echo",
+		&testv1.EchoRequest{Message: "second"},
+	)
+	if err == nil {
+		t.Fatal("expected error on dead connection, got nil")
+	}
+}
+
+// ============================================================
+// WS Client — Disconnect with multiple streams
+// ============================================================
+
+func TestIntegration_WSClientDisconnectMultiStream(t *testing.T) {
+	t.Parallel()
+
+	allStarted := make(chan struct{})
+	var startCount int32
+	var startMu sync.Mutex
+
+	s := ws.NewServer()
+	ws.HandleServerStream(s, "/test.v1.TickService/Watch",
+		func(
+			ctx context.Context,
+			_ *procframe.Request[testv1.TickRequest],
+			_ procframe.ServerStream[testv1.TickResponse],
+		) error {
+			startMu.Lock()
+			startCount++
+			if startCount == 3 {
+				close(allStarted)
+			}
+			startMu.Unlock()
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle("/ws", s)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ctx := t.Context()
+	wsURL := "ws" + srv.URL[len("http"):] + "/ws"
+	//nolint:bodyclose // coder/websocket manages resp.Body internally
+	rawConn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+
+	conn := ws.NewConn(ctx, rawConn)
+
+	const streamCount = 3
+	errChs := make([]chan error, streamCount)
+	for i := range streamCount {
+		errChs[i] = make(chan error, 1)
+		go func(ch chan error) {
+			stream, sErr := ws.CallServerStream[testv1.TickRequest, testv1.TickResponse](
+				ctx, conn, "/test.v1.TickService/Watch",
+				&testv1.TickRequest{Label: "probe", Count: 1000},
+			)
+			if sErr != nil {
+				ch <- sErr
+				return
+			}
+			for {
+				_, rErr := stream.Receive()
+				if rErr != nil {
+					ch <- rErr
+					return
+				}
+			}
+		}(errChs[i])
+	}
+
+	select {
+	case <-allStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("not all handlers started within 5 seconds")
+	}
+
+	rawConn.CloseNow() //nolint:errcheck // intentional forced close
+
+	// ALL streams must return errors.
+	for i, ch := range errChs {
+		select {
+		case streamErr := <-ch:
+			if streamErr == nil {
+				t.Fatalf("stream %d: expected error after disconnect, got nil", i)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("stream %d: did not return within 5 seconds after disconnect", i)
+		}
+	}
+}
+
+// ============================================================
+// WS Client — Concurrent Close and Receive
+// ============================================================
+
+func TestIntegration_WSClientConcurrentCloseAndReceive(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	ws.HandleServerStream(s, "/test.v1.TickService/Watch",
+		func(
+			ctx context.Context,
+			_ *procframe.Request[testv1.TickRequest],
+			stream procframe.ServerStream[testv1.TickResponse],
+		) error {
+			for i := range 100 {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				default:
+				}
+				if err := stream.Send(&procframe.Response[testv1.TickResponse]{
+					Msg: &testv1.TickResponse{Label: "tick", Seq: int32(i)},
+				}); err != nil {
+					return err
+				}
+				time.Sleep(10 * time.Millisecond)
+			}
+			return nil
+		},
+	)
+
+	conn := startWSClientConn(t, s)
+
+	stream, err := ws.CallServerStream[testv1.TickRequest, testv1.TickResponse](
+		t.Context(), conn, "/test.v1.TickService/Watch",
+		&testv1.TickRequest{Label: "probe", Count: 100},
+	)
+	if err != nil {
+		t.Fatalf("CallServerStream: %v", err)
+	}
+
+	for range 3 {
+		_, rErr := stream.Receive()
+		if rErr != nil {
+			t.Fatalf("initial Receive: %v", rErr)
+		}
+	}
+
+	// Race Close() and Receive() concurrently.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			_, rErr := stream.Receive()
+			if rErr != nil {
+				return
+			}
+		}
+	}()
+
+	time.Sleep(20 * time.Millisecond)
+	if cErr := stream.Close(); cErr != nil {
+		t.Fatalf("Close: %v", cErr)
+	}
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("deadlock: Receive did not unblock after Close")
+	}
+}
+
+// ============================================================
+// WS Client — Network failure mid-stream
+// ============================================================
+
+func TestIntegration_WSClientNetworkFailureMidStream(t *testing.T) {
+	t.Parallel()
+
+	sentOne := make(chan struct{})
+
+	s := ws.NewServer()
+	ws.HandleServerStream(s, "/test.v1.TickService/Watch",
+		func(
+			ctx context.Context,
+			_ *procframe.Request[testv1.TickRequest],
+			stream procframe.ServerStream[testv1.TickResponse],
+		) error {
+			if err := stream.Send(&procframe.Response[testv1.TickResponse]{
+				Msg: &testv1.TickResponse{Label: "first", Seq: 1},
+			}); err != nil {
+				return err
+			}
+			close(sentOne)
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	)
+
+	mux := http.NewServeMux()
+	mux.Handle("/ws", s)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ctx := t.Context()
+	wsURL := "ws" + srv.URL[len("http"):] + "/ws"
+	//nolint:bodyclose // coder/websocket manages resp.Body internally
+	rawConn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+
+	conn := ws.NewConn(ctx, rawConn)
+
+	stream, err := ws.CallServerStream[testv1.TickRequest, testv1.TickResponse](
+		ctx, conn, "/test.v1.TickService/Watch",
+		&testv1.TickRequest{Label: "net-fail", Count: 1000},
+	)
+	if err != nil {
+		t.Fatalf("CallServerStream: %v", err)
+	}
+
+	msg, err := stream.Receive()
+	if err != nil {
+		t.Fatalf("first Receive: %v", err)
+	}
+	if msg.Label != "first" || msg.Seq != 1 {
+		t.Fatalf("unexpected first message: %+v", msg)
+	}
+
+	<-sentOne
+	rawConn.CloseNow() //nolint:errcheck // intentional forced close
+
+	// Next Receive must return an error, not hang.
+	errCh := make(chan error, 1)
+	go func() {
+		_, rErr := stream.Receive()
+		errCh <- rErr
+	}()
+
+	select {
+	case rErr := <-errCh:
+		if rErr == nil {
+			t.Fatal("expected error after network failure, got nil")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Receive did not return within 5 seconds after network failure")
+	}
+}
+
+// ============================================================
+// WS Client — Concurrent Send and CloseSend
+// ============================================================
+
+func TestIntegration_WSClientConcurrentSendAndCloseSend(t *testing.T) {
+	t.Parallel()
+
+	s := ws.NewServer()
+	testv1.NewFourShapeServiceWSHandler(s, &fourShapeHandler{})
+
+	conn := startWSClientConn(t, s)
+
+	stream, err := ws.CallBidi[testv1.ChatMessage, testv1.ChatReply](
+		t.Context(), conn, "/test.v1.FourShapeService/Chat",
+	)
+	if err != nil {
+		t.Fatalf("CallBidi: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2) //nolint:mnd // Send goroutine + CloseSend goroutine
+
+	go func() {
+		defer wg.Done()
+		for range 20 {
+			sErr := stream.Send(&testv1.ChatMessage{Text: "race"})
+			if sErr != nil {
+				return
+			}
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		time.Sleep(5 * time.Millisecond)
+		stream.CloseSend() //nolint:errcheck // best-effort close in race test
+	}()
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("deadlock: Send/CloseSend race did not complete")
+	}
+
+	// Drain remaining responses.
+	for {
+		_, rErr := stream.Receive()
+		if rErr != nil {
+			break
+		}
+	}
+}
