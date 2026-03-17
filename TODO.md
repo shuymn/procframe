@@ -13,6 +13,24 @@
     4. CLI 専用 option (cli_group, bind_into, cli_path) が Connect transport に干渉しない (既存テスト regression なし)
   - Note: アダプタ層 (`adaptUnary`, `adaptServerStream`) は薄く、connect-go の低レベル API で codegen なしに実装可能。proto message type は CLI/Connect 間で共有される。
 
+- Question: Connect クライアント生成のランタイム配置: codegen のみ vs transport/connect にランタイム helper 追加
+  - Class: `blocking`
+  - Resolution: `decision`
+  - Status: `resolved`
+  - Decision: codegen のみ。Connect クライアントは `connectrpc.com/connect` の `Client[Req, Res]` を直接使えばよく、procframe 独自のランタイムラッパーは不要。生成コードは `connectrpc.com/connect` の型を直接参照する。
+
+- Question: クライアントインターフェースの型: `connectrpc.com/connect` の型を直接使うか `procframe.Request`/`procframe.Response` でラップするか
+  - Class: `blocking`
+  - Resolution: `decision`
+  - Status: `resolved`
+  - Decision: `connectrpc.com/connect` の型を直接使用。クライアントはトランスポート固有であり procframe ラッパーで包む利点がない。Connect エコシステムとの互換性を優先する。
+
+- Question: クライアントコンストラクタの命名: `New{Service}Client` vs `New{Service}ConnectClient`
+  - Class: `risk-bearing`
+  - Resolution: `decision`
+  - Status: `resolved`
+  - Decision: `New{Service}ConnectClient`。サーバー側 `New{Service}ConnectHandler` と対称。将来 WS クライアントを追加した場合に名前空間が衝突しない。
+
 ## Deferred Questions
 
 - Question: WS frame の正式 schema
@@ -167,3 +185,23 @@
   - Executable doc: `TestInvokeUnaryInterceptors`, `TestInvokeServerStreamInterceptors`, `TestIntegration_CLIInterceptor`, `TestIntegration_ConnectInterceptor`, `TestIntegration_WSInterceptor`
   - Why not split vertically further?: 共通 interceptor 契約、transport option、generated CLI 呼び出し経路は同じ public capability を構成しており、どれか単体では外部から観測できる前進にならないため
   - Escalate if: type-erased interceptor 契約と typed handler の間で unary/stream の両方を unsafe なしに橋渡しできない場合
+
+- [ ] Theme: Connect クライアントコード生成
+  - Outcome: `connect.enabled = true` のメソッドに対し、型付き Connect クライアントが codegen で自動生成され、手動の `connectrpc.NewClient` 構築が不要になる
+  - Goal: `protoc-gen-procframe-go` に Connect クライアント生成を追加。インターフェース、実装構造体、コンストラクタを `.proc.go` ファイルに出力する
+  - Must Not Break: 既存 handler interface の signature, CLI/Connect/WS transport の動作, codegen の既存出力, error code 体系, proto option の後方互換性
+  - Non-goals: WS クライアント生成, procframe ラッパー型でのクライアント型抽象化, クライアント側 interceptor, retry/reconnection ロジック, 新しい proto option の追加
+  - Acceptance (EARS):
+    - When a method has `connect.enabled = true`, the codegen shall include that method in the `{Service}ConnectClient` interface and `New{Service}ConnectClient` constructor
+    - When a method has `connect.enabled = false` (default), the codegen shall exclude that method from the Connect client
+    - When no methods have `connect.enabled = true`, the codegen shall not produce a Connect client interface, constructor, or `connectrpc.com/connect` import
+    - When `New{Service}ConnectClient` is called with an HTTP client and base URL, the returned client shall provide typed method calls for each Connect-enabled RPC
+    - When a unary client method is called, it shall delegate to `connect.Client.CallUnary` with the correct procedure string
+    - When a client-stream client method is called, it shall delegate to `connect.Client.CallClientStream`
+    - When a server-stream client method is called, it shall delegate to `connect.Client.CallServerStream`
+    - When a bidi client method is called, it shall delegate to `connect.Client.CallBidiStream`
+  - Evidence: `run=task check; oracle=generated Connect client compiles, round-trip tests pass for all four RPC shapes, opt-out methods excluded from client interface; visibility=independent; controls=[agent,context]; missing=[]; companion=none`
+  - Gates: `static`, `integration`
+  - Executable doc: `TestIntegration_ConnectClientUnary`, `TestIntegration_ConnectClientClientStream`, `TestIntegration_ConnectClientServerStream`, `TestIntegration_ConnectClientBidi`, `TestIntegration_ConnectClientOptOut`
+  - Why not split vertically further?: クライアントインターフェース、実装構造体、コンストラクタは同一の codegen パスを構成し、いずれか単体では Connect クライアントが使用可能にならないため
+  - Escalate if: `connectrpc.com/connect` の `Client[Req, Res]` 型が shape ごとに異なる呼び出しメソッドを持つ設計により、単一の generated interface で全 shape を型安全に統一できない場合
