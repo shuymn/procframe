@@ -1,0 +1,52 @@
+syntax = "proto3";
+
+package kv.v1;
+
+import "procframe/options/v1/options.proto";
+
+option go_package = "github.com/shuymn/procframe/examples/gen/kv/v1;kvv1";
+
+message GetRequest {
+  string key = 1;
+}
+
+message GetResponse {
+  string key = 1;
+  string value = 2;
+}
+
+message ListRequest {
+  string prefix = 1;
+}
+
+message Entry {
+  string key = 1;
+  string value = 2;
+}
+
+service KVService {
+  option (procframe.options.v1.cli_group) = {
+    path: {
+      segments: ["kv"]
+    }
+    summary: "Key-value store operations"
+  };
+
+  rpc Get(GetRequest) returns (GetResponse) {
+    option (procframe.options.v1.proc) = {
+      cli_path: {
+        segments: ["get"]
+      }
+      summary: "Get a value by key"
+    };
+  }
+
+  rpc List(ListRequest) returns (stream Entry) {
+    option (procframe.options.v1.proc) = {
+      cli_path: {
+        segments: ["list"]
+      }
+      summary: "List entries by prefix"
+    };
+  }
+}
