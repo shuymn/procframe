@@ -809,3 +809,195 @@ func TestIntegration_ConnectErrorNoInternalLeak(t *testing.T) {
 		}
 	}
 }
+
+// --- Generated Connect client integration tests ---
+
+func TestIntegration_ConnectClientUnary(t *testing.T) {
+	t.Parallel()
+
+	h := &fourShapeHandler{}
+	path, handler := testv1.NewFourShapeServiceConnectHandler(h)
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := testv1.NewFourShapeServiceConnectClient(srv.Client(), srv.URL)
+
+	resp, err := client.Ping(t.Context(), connectrpc.NewRequest(&testv1.CollectRequest{
+		Item: "hello",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Msg.Count != 1 {
+		t.Fatalf("want count=1, got %d", resp.Msg.Count)
+	}
+	if resp.Msg.Items != "hello" {
+		t.Fatalf("want items=hello, got %q", resp.Msg.Items)
+	}
+}
+
+func TestIntegration_ConnectClientClientStream(t *testing.T) {
+	t.Parallel()
+
+	h := &fourShapeHandler{}
+	path, handler := testv1.NewFourShapeServiceConnectHandler(h)
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := testv1.NewFourShapeServiceConnectClient(srv.Client(), srv.URL)
+
+	stream := client.Collect(t.Context())
+	for _, item := range []string{"x", "y", "z"} {
+		if err := stream.Send(&testv1.CollectRequest{Item: item}); err != nil {
+			t.Fatalf("send %q: %v", item, err)
+		}
+	}
+
+	resp, err := stream.CloseAndReceive()
+	if err != nil {
+		t.Fatalf("CloseAndReceive: %v", err)
+	}
+	if resp.Msg.Count != 3 {
+		t.Fatalf("want count=3, got %d", resp.Msg.Count)
+	}
+	if resp.Msg.Items != "x,y,z" {
+		t.Fatalf("want items=x,y,z, got %q", resp.Msg.Items)
+	}
+}
+
+func TestIntegration_ConnectClientServerStream(t *testing.T) {
+	t.Parallel()
+
+	h := &fourShapeHandler{}
+	path, handler := testv1.NewFourShapeServiceConnectHandler(h)
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := testv1.NewFourShapeServiceConnectClient(srv.Client(), srv.URL)
+
+	stream, err := client.Feed(t.Context(), connectrpc.NewRequest(&testv1.CollectRequest{
+		Item: "test",
+	}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var msgs []*testv1.ChatReply
+	for stream.Receive() {
+		msgs = append(msgs, stream.Msg())
+	}
+	if err := stream.Err(); err != nil {
+		t.Fatalf("stream error: %v", err)
+	}
+	if err := stream.Close(); err != nil {
+		t.Fatalf("close error: %v", err)
+	}
+
+	if len(msgs) != 1 {
+		t.Fatalf("want 1 message, got %d", len(msgs))
+	}
+	if msgs[0].Text != "feed:test" {
+		t.Fatalf("want text=feed:test, got %q", msgs[0].Text)
+	}
+}
+
+func TestIntegration_ConnectClientBidi(t *testing.T) {
+	t.Parallel()
+
+	h := &fourShapeHandler{}
+	path, handler := testv1.NewFourShapeServiceConnectHandler(h)
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+
+	srv := httptest.NewUnstartedServer(mux)
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	defer srv.Close()
+
+	client := testv1.NewFourShapeServiceConnectClient(srv.Client(), srv.URL, connectrpc.WithGRPC())
+
+	stream := client.Chat(t.Context())
+
+	inputs := []string{"ping", "pong"}
+	for _, text := range inputs {
+		if err := stream.Send(&testv1.ChatMessage{Text: text}); err != nil {
+			t.Fatalf("send %q: %v", text, err)
+		}
+	}
+	if err := stream.CloseRequest(); err != nil {
+		t.Fatalf("CloseRequest: %v", err)
+	}
+
+	var replies []string
+	for {
+		msg, err := stream.Receive()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Receive: %v", err)
+		}
+		replies = append(replies, msg.Text)
+	}
+	if err := stream.CloseResponse(); err != nil {
+		t.Fatalf("CloseResponse: %v", err)
+	}
+
+	if len(replies) != 2 {
+		t.Fatalf("want 2 replies, got %d: %v", len(replies), replies)
+	}
+	for i, want := range []string{"echo:ping", "echo:pong"} {
+		if replies[i] != want {
+			t.Fatalf("reply[%d]: want %q, got %q", i, want, replies[i])
+		}
+	}
+}
+
+func TestIntegration_ConnectClientOptOut(t *testing.T) {
+	t.Parallel()
+
+	// CliOptionsTestService has DefaultEnabled and ExplicitEnabled with
+	// connect.enabled = true. ExplicitDisabled and WsEnabled do not.
+	// The generated client should only expose DefaultEnabled and ExplicitEnabled.
+
+	h := &cliOptionsHandler{}
+	path, handler := testv1.NewCliOptionsTestServiceConnectHandler(h)
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	client := testv1.NewCliOptionsTestServiceConnectClient(srv.Client(), srv.URL)
+
+	// DefaultEnabled should work through the generated client.
+	resp, err := client.DefaultEnabled(t.Context(), connectrpc.NewRequest(&testv1.PingRequest{
+		Target: "via-client",
+	}))
+	if err != nil {
+		t.Fatalf("DefaultEnabled: unexpected error: %v", err)
+	}
+	if resp.Msg.Result != "via-client" {
+		t.Fatalf("want result=via-client, got %q", resp.Msg.Result)
+	}
+
+	// ExplicitEnabled should also work.
+	resp, err = client.ExplicitEnabled(t.Context(), connectrpc.NewRequest(&testv1.PingRequest{
+		Target: "explicit",
+	}))
+	if err != nil {
+		t.Fatalf("ExplicitEnabled: unexpected error: %v", err)
+	}
+	if resp.Msg.Result != "explicit" {
+		t.Fatalf("want result=explicit, got %q", resp.Msg.Result)
+	}
+}
