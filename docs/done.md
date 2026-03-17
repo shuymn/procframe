@@ -26,7 +26,7 @@
 
 - [x] Theme: Runtime core + options.proto
   - Outcome: procframe パッケージが Go モジュールとしてコンパイル可能になり、options.proto が protoc で import 可能になる
-  - Goal: pointer-based `Request[T].Meta`, `Response[T].Meta`, interceptor `CallSpec`, `Status/StatusError`, `Code` 型と options.proto の提供
+  - Goal: value-based `Request[T].Meta`, `Response[T].Meta`, interceptor `Meta` / `CallSpec`, `Status/StatusError`, `Code` 型と options.proto の提供
   - Must Not Break: なし (新規プロジェクト)
   - Non-goals: codegen, transport 実装, config 実装
   - Acceptance (EARS):

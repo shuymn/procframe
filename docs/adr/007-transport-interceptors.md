@@ -10,7 +10,7 @@ We want one interceptor contract that works across all server-side transports wh
 
 - Introduce a transport-shared interceptor contract in `procframe`.
 - Model the contract after connect-go's interceptor shape: type-erased request/response views plus per-call wrapper functions instead of transport-specific hook callbacks.
-- Expose `Meta` and `CallSpec` through pointers in the shared request/response/conn views so interceptor paths do not copy metadata structs on every hop.
+- Expose `Meta` and `CallSpec` as values in the shared request/response/conn views. `Request` / `Response` stay pointer wrappers around `Msg *T`, but the small metadata structs are cheaper overall as values than as separately allocated pointers on the interceptor hot path.
 - Support three wrapper points:
   - unary call execution
   - server-stream call execution
@@ -31,7 +31,7 @@ We want one interceptor contract that works across all server-side transports wh
 - Generated CLI runners now execute through the same core invocation helpers as Connect and WS.
 - Stream-level middleware can observe each outbound message without forcing handlers to change shape.
 - CLI injects its interceptor chain through context internally, so hand-written `cli.Node` usage does not need a signature migration.
-- Interceptor-heavy call paths share `Meta` / `CallSpec` instances instead of copying them through each adapter layer.
+- Interceptor-heavy call paths avoid extra metadata allocations while preserving `nil *Request` / `nil *Response` semantics through the outer pointer wrappers.
 
 ## Revisit trigger
 

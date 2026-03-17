@@ -341,7 +341,7 @@ func NewFourShapeServiceCLIRunner(h FourShapeServiceHandler, opts ...cli.Option)
 					return nil
 				},
 			)
-			return procframe.InvokeBidi(ctx, &procframe.CallSpec{Procedure: "/test.v1.FourShapeService/Chat", Transport: procframe.TransportCLI, Shape: procframe.CallShapeBidi}, stream, h.Chat, cli.InterceptorsFromContext(ctx)...)
+			return procframe.InvokeBidi(ctx, procframe.CallSpec{Procedure: "/test.v1.FourShapeService/Chat", Transport: procframe.TransportCLI, Shape: procframe.CallShapeBidi}, stream, h.Chat, cli.InterceptorsFromContext(ctx)...)
 		},
 	}
 	node_four_collect := &cli.Node{
@@ -368,7 +368,7 @@ func NewFourShapeServiceCLIRunner(h FourShapeServiceHandler, opts ...cli.Option)
 				}
 				return &procframe.Request[CollectRequest]{Msg: req}, nil
 			})
-			resp, err := procframe.InvokeClientStream(ctx, &procframe.CallSpec{Procedure: "/test.v1.FourShapeService/Collect", Transport: procframe.TransportCLI, Shape: procframe.CallShapeClientStream}, reader, h.Collect, cli.InterceptorsFromContext(ctx)...)
+			resp, err := procframe.InvokeClientStream(ctx, procframe.CallSpec{Procedure: "/test.v1.FourShapeService/Collect", Transport: procframe.TransportCLI, Shape: procframe.CallShapeClientStream}, reader, h.Collect, cli.InterceptorsFromContext(ctx)...)
 			if err != nil {
 				return err
 			}
@@ -430,9 +430,9 @@ func NewFourShapeServiceCLIRunner(h FourShapeServiceHandler, opts ...cli.Option)
 				fmt.Fprintln(stdout, string(out))
 				return nil
 			})
-			return procframe.InvokeServerStream(ctx, &procframe.CallSpec{Procedure: "/test.v1.FourShapeService/Feed", Transport: procframe.TransportCLI, Shape: procframe.CallShapeServerStream}, &procframe.Request[CollectRequest]{
+			return procframe.InvokeServerStream(ctx, procframe.CallSpec{Procedure: "/test.v1.FourShapeService/Feed", Transport: procframe.TransportCLI, Shape: procframe.CallShapeServerStream}, &procframe.Request[CollectRequest]{
 				Msg:  req,
-				Meta: &procframe.Meta{Procedure: "/test.v1.FourShapeService/Feed"},
+				Meta: procframe.Meta{Procedure: "/test.v1.FourShapeService/Feed"},
 			}, stream, h.Feed, cli.InterceptorsFromContext(ctx)...)
 		},
 		HelpFlags: func() *flag.FlagSet {
@@ -466,9 +466,9 @@ func NewFourShapeServiceCLIRunner(h FourShapeServiceHandler, opts ...cli.Option)
 					Item: flag_item,
 				}
 			}
-			resp, err := procframe.InvokeUnary(ctx, &procframe.CallSpec{Procedure: "/test.v1.FourShapeService/Ping", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary}, &procframe.Request[CollectRequest]{
+			resp, err := procframe.InvokeUnary(ctx, procframe.CallSpec{Procedure: "/test.v1.FourShapeService/Ping", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary}, &procframe.Request[CollectRequest]{
 				Msg:  req,
-				Meta: &procframe.Meta{Procedure: "/test.v1.FourShapeService/Ping"},
+				Meta: procframe.Meta{Procedure: "/test.v1.FourShapeService/Ping"},
 			}, h.Ping, cli.InterceptorsFromContext(ctx)...)
 			if err != nil {
 				return err

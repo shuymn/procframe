@@ -228,9 +228,9 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 					Target: flag_target,
 				}
 			}
-			resp, err := procframe.InvokeUnary(ctx, &procframe.CallSpec{Procedure: "/test.v1.CliOptionsTestService/DefaultEnabled", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary}, &procframe.Request[PingRequest]{
+			resp, err := procframe.InvokeUnary(ctx, procframe.CallSpec{Procedure: "/test.v1.CliOptionsTestService/DefaultEnabled", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary}, &procframe.Request[PingRequest]{
 				Msg:  req,
-				Meta: &procframe.Meta{Procedure: "/test.v1.CliOptionsTestService/DefaultEnabled"},
+				Meta: procframe.Meta{Procedure: "/test.v1.CliOptionsTestService/DefaultEnabled"},
 			}, h.DefaultEnabled, cli.InterceptorsFromContext(ctx)...)
 			if err != nil {
 				return err
@@ -281,9 +281,9 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 					Target: flag_target,
 				}
 			}
-			resp, err := procframe.InvokeUnary(ctx, &procframe.CallSpec{Procedure: "/test.v1.CliOptionsTestService/ExplicitEnabled", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary}, &procframe.Request[PingRequest]{
+			resp, err := procframe.InvokeUnary(ctx, procframe.CallSpec{Procedure: "/test.v1.CliOptionsTestService/ExplicitEnabled", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary}, &procframe.Request[PingRequest]{
 				Msg:  req,
-				Meta: &procframe.Meta{Procedure: "/test.v1.CliOptionsTestService/ExplicitEnabled"},
+				Meta: procframe.Meta{Procedure: "/test.v1.CliOptionsTestService/ExplicitEnabled"},
 			}, h.ExplicitEnabled, cli.InterceptorsFromContext(ctx)...)
 			if err != nil {
 				return err
@@ -334,9 +334,9 @@ func NewCliOptionsTestServiceCLIRunner(h CliOptionsTestServiceHandler, opts ...c
 					Target: flag_target,
 				}
 			}
-			resp, err := procframe.InvokeUnary(ctx, &procframe.CallSpec{Procedure: "/test.v1.CliOptionsTestService/WsEnabled", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary}, &procframe.Request[PingRequest]{
+			resp, err := procframe.InvokeUnary(ctx, procframe.CallSpec{Procedure: "/test.v1.CliOptionsTestService/WsEnabled", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary}, &procframe.Request[PingRequest]{
 				Msg:  req,
-				Meta: &procframe.Meta{Procedure: "/test.v1.CliOptionsTestService/WsEnabled"},
+				Meta: procframe.Meta{Procedure: "/test.v1.CliOptionsTestService/WsEnabled"},
 			}, h.WsEnabled, cli.InterceptorsFromContext(ctx)...)
 			if err != nil {
 				return err

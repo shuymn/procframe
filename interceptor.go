@@ -34,14 +34,14 @@ type CallSpec struct {
 // AnyRequest is the middleware-facing request view.
 type AnyRequest interface {
 	Any() any
-	Meta() *Meta
-	Spec() *CallSpec
+	Meta() Meta
+	Spec() CallSpec
 }
 
 // AnyResponse is the middleware-facing response view.
 type AnyResponse interface {
 	Any() any
-	Meta() *Meta
+	Meta() Meta
 }
 
 // Conn is the generic connection surface seen by middleware.
@@ -50,7 +50,7 @@ type AnyResponse interface {
 // Receive/Send to the inner Conn (the conn-decorator pattern).
 type Conn interface {
 	Context() context.Context
-	Spec() *CallSpec
+	Spec() CallSpec
 	Receive() (AnyRequest, error)
 	Send(AnyResponse) error
 }
@@ -79,18 +79,22 @@ func NewAnyResponse(msg any) AnyResponse {
 }
 
 // NewAnyResponseWithMeta constructs a middleware-visible response with explicit metadata.
-func NewAnyResponseWithMeta(msg any, meta *Meta) AnyResponse {
+func NewAnyResponseWithMeta(msg any, meta Meta) AnyResponse {
 	return &responseValue{msg: msg, meta: meta}
 }
 
 // InvokeUnary executes a typed unary handler through the interceptor chain.
 func InvokeUnary[Req, Res any](
 	ctx context.Context,
-	spec *CallSpec,
+	spec CallSpec,
 	req *Request[Req],
 	handler func(context.Context, *Request[Req]) (*Response[Res], error),
 	interceptors ...Interceptor,
 ) (*Response[Res], error) {
+	if !hasActiveInterceptors(interceptors) {
+		return handler(ctx, req)
+	}
+
 	conn := &unaryConn[Req, Res]{
 		getCtx: func() context.Context { return ctx },
 		spec:   spec,
@@ -125,7 +129,7 @@ func InvokeUnary[Req, Res any](
 // InvokeClientStream executes a typed client-stream handler through the interceptor chain.
 func InvokeClientStream[Req, Res any](
 	ctx context.Context,
-	spec *CallSpec,
+	spec CallSpec,
 	stream ClientStream[Req],
 	handler func(context.Context, ClientStream[Req]) (*Response[Res], error),
 	interceptors ...Interceptor,
@@ -156,7 +160,7 @@ func InvokeClientStream[Req, Res any](
 // InvokeServerStream executes a typed server-stream handler through the interceptor chain.
 func InvokeServerStream[Req, Res any](
 	ctx context.Context,
-	spec *CallSpec,
+	spec CallSpec,
 	req *Request[Req],
 	stream ServerStream[Res],
 	handler func(context.Context, *Request[Req], ServerStream[Res]) error,
@@ -187,7 +191,7 @@ func InvokeServerStream[Req, Res any](
 // InvokeBidi executes a typed bidi-stream handler through the interceptor chain.
 func InvokeBidi[Req, Res any](
 	ctx context.Context,
-	spec *CallSpec,
+	spec CallSpec,
 	stream BidiStream[Req, Res],
 	handler func(context.Context, BidiStream[Req, Res]) error,
 	interceptors ...Interceptor,
@@ -216,10 +220,19 @@ func chainInterceptors(inner HandlerFunc, interceptors []Interceptor) HandlerFun
 	return next
 }
 
+func hasActiveInterceptors(interceptors []Interceptor) bool {
+	for _, interceptor := range interceptors {
+		if interceptor != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // --- request / response views ---
 
 type requestView[T any] struct {
-	spec *CallSpec
+	spec CallSpec
 	req  *Request[T]
 }
 
@@ -230,16 +243,16 @@ func (r *requestView[T]) Any() any {
 	return r.req.Msg
 }
 
-func (r *requestView[T]) Meta() *Meta {
+func (r *requestView[T]) Meta() Meta {
 	if r == nil || r.req == nil {
-		return nil
+		return Meta{}
 	}
 	return r.req.Meta
 }
 
-func (r *requestView[T]) Spec() *CallSpec {
+func (r *requestView[T]) Spec() CallSpec {
 	if r == nil {
-		return nil
+		return CallSpec{}
 	}
 	return r.spec
 }
@@ -255,16 +268,16 @@ func (r *responseView[T]) Any() any {
 	return r.resp.Msg
 }
 
-func (r *responseView[T]) Meta() *Meta {
+func (r *responseView[T]) Meta() Meta {
 	if r == nil || r.resp == nil {
-		return nil
+		return Meta{}
 	}
 	return r.resp.Meta
 }
 
 type responseValue struct {
 	msg  any
-	meta *Meta
+	meta Meta
 }
 
 func (r *responseValue) Any() any {
@@ -274,9 +287,9 @@ func (r *responseValue) Any() any {
 	return r.msg
 }
 
-func (r *responseValue) Meta() *Meta {
+func (r *responseValue) Meta() Meta {
 	if r == nil {
-		return nil
+		return Meta{}
 	}
 	return r.meta
 }
@@ -286,14 +299,14 @@ func (r *responseValue) Meta() *Meta {
 // unaryConn bridges a unary typed handler to the generic Conn surface.
 type unaryConn[Req, Res any] struct {
 	getCtx   func() context.Context
-	spec     *CallSpec
+	spec     CallSpec
 	req      *Request[Req]
 	received bool
 	result   *Response[Res]
 }
 
 func (c *unaryConn[Req, Res]) Context() context.Context { return c.getCtx() }
-func (c *unaryConn[Req, Res]) Spec() *CallSpec          { return c.spec }
+func (c *unaryConn[Req, Res]) Spec() CallSpec           { return c.spec }
 
 func (c *unaryConn[Req, Res]) Receive() (AnyRequest, error) {
 	if c.received {
@@ -317,13 +330,13 @@ func (c *unaryConn[Req, Res]) Send(resp AnyResponse) error {
 
 // clientStreamConn bridges a client-stream typed handler to the generic Conn surface.
 type clientStreamConn[Req, Res any] struct {
-	spec   *CallSpec
+	spec   CallSpec
 	stream ClientStream[Req]
 	result *Response[Res]
 }
 
 func (c *clientStreamConn[Req, Res]) Context() context.Context { return c.stream.Context() }
-func (c *clientStreamConn[Req, Res]) Spec() *CallSpec          { return c.spec }
+func (c *clientStreamConn[Req, Res]) Spec() CallSpec           { return c.spec }
 
 func (c *clientStreamConn[Req, Res]) Receive() (AnyRequest, error) {
 	req, err := c.stream.Receive()
@@ -347,14 +360,14 @@ func (c *clientStreamConn[Req, Res]) Send(resp AnyResponse) error {
 
 // serverStreamConn bridges a server-stream typed handler to the generic Conn surface.
 type serverStreamConn[Req, Res any] struct {
-	spec     *CallSpec
+	spec     CallSpec
 	req      *Request[Req]
 	received bool
 	stream   ServerStream[Res]
 }
 
 func (c *serverStreamConn[Req, Res]) Context() context.Context { return c.stream.Context() }
-func (c *serverStreamConn[Req, Res]) Spec() *CallSpec          { return c.spec }
+func (c *serverStreamConn[Req, Res]) Spec() CallSpec           { return c.spec }
 
 func (c *serverStreamConn[Req, Res]) Receive() (AnyRequest, error) {
 	if c.received {
@@ -377,12 +390,12 @@ func (c *serverStreamConn[Req, Res]) Send(resp AnyResponse) error {
 
 // bidiConn bridges a bidi-stream typed handler to the generic Conn surface.
 type bidiConn[Req, Res any] struct {
-	spec   *CallSpec
+	spec   CallSpec
 	stream BidiStream[Req, Res]
 }
 
 func (c *bidiConn[Req, Res]) Context() context.Context { return c.stream.Context() }
-func (c *bidiConn[Req, Res]) Spec() *CallSpec          { return c.spec }
+func (c *bidiConn[Req, Res]) Spec() CallSpec           { return c.spec }
 
 func (c *bidiConn[Req, Res]) Receive() (AnyRequest, error) {
 	req, err := c.stream.Receive()

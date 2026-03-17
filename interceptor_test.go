@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -84,7 +85,7 @@ func (s *sliceBidiStream) Send(resp *procframe.Response[testResponse]) error {
 func TestInvokeUnary_NoInterceptor(t *testing.T) {
 	t.Parallel()
 
-	spec := &procframe.CallSpec{
+	spec := procframe.CallSpec{
 		Procedure: "/test.v1.EchoService/Echo",
 		Transport: procframe.TransportCLI,
 		Shape:     procframe.CallShapeUnary,
@@ -111,14 +112,14 @@ func TestInvokeUnary_NoInterceptor(t *testing.T) {
 func TestInvokeUnary_InterceptorOrdering(t *testing.T) {
 	t.Parallel()
 
-	spec := &procframe.CallSpec{
+	spec := procframe.CallSpec{
 		Procedure: "/test.v1.EchoService/Echo",
 		Transport: procframe.TransportCLI,
 		Shape:     procframe.CallShapeUnary,
 	}
 	req := &procframe.Request[testRequest]{
 		Msg:  &testRequest{Message: "hello"},
-		Meta: &procframe.Meta{Procedure: spec.Procedure},
+		Meta: procframe.Meta{Procedure: spec.Procedure},
 	}
 	var events []string
 
@@ -188,7 +189,7 @@ func TestInvokeUnary_InterceptorOrdering(t *testing.T) {
 func TestInvokeUnary_ShortCircuit(t *testing.T) {
 	t.Parallel()
 
-	spec := &procframe.CallSpec{
+	spec := procframe.CallSpec{
 		Procedure: "/test.v1.EchoService/Echo",
 		Transport: procframe.TransportConnect,
 		Shape:     procframe.CallShapeUnary,
@@ -199,7 +200,7 @@ func TestInvokeUnary_ShortCircuit(t *testing.T) {
 		spec,
 		&procframe.Request[testRequest]{
 			Msg:  &testRequest{Message: "ignored"},
-			Meta: &procframe.Meta{Procedure: spec.Procedure},
+			Meta: procframe.Meta{Procedure: spec.Procedure},
 		},
 		func(context.Context, *procframe.Request[testRequest]) (*procframe.Response[testResponse], error) {
 			t.Fatal("handler must not run")
@@ -224,7 +225,7 @@ func TestInvokeUnary_NilInterceptor(t *testing.T) {
 
 	resp, err := procframe.InvokeUnary(
 		t.Context(),
-		&procframe.CallSpec{
+		procframe.CallSpec{
 			Procedure: "/test.v1.EchoService/Echo",
 			Transport: procframe.TransportCLI,
 			Shape:     procframe.CallShapeUnary,
@@ -248,14 +249,14 @@ func TestInvokeUnary_RejectsUnexpectedResponseType(t *testing.T) {
 
 	_, err := procframe.InvokeUnary(
 		t.Context(),
-		&procframe.CallSpec{
+		procframe.CallSpec{
 			Procedure: "/test.v1.EchoService/Echo",
 			Transport: procframe.TransportCLI,
 			Shape:     procframe.CallShapeUnary,
 		},
 		&procframe.Request[testRequest]{
 			Msg:  &testRequest{Message: "hello"},
-			Meta: &procframe.Meta{Procedure: "/test.v1.EchoService/Echo"},
+			Meta: procframe.Meta{Procedure: "/test.v1.EchoService/Echo"},
 		},
 		func(context.Context, *procframe.Request[testRequest]) (*procframe.Response[testResponse], error) {
 			return nil, nil
@@ -283,7 +284,7 @@ func TestInvokeUnary_HandlerError(t *testing.T) {
 
 	_, err := procframe.InvokeUnary(
 		t.Context(),
-		&procframe.CallSpec{
+		procframe.CallSpec{
 			Procedure: "/test.v1.EchoService/Echo",
 			Transport: procframe.TransportCLI,
 			Shape:     procframe.CallShapeUnary,
@@ -308,7 +309,7 @@ func TestInvokeServerStream_NoInterceptor(t *testing.T) {
 	stream := &collectingStream{getCtx: t.Context}
 	err := procframe.InvokeServerStream(
 		t.Context(),
-		&procframe.CallSpec{
+		procframe.CallSpec{
 			Procedure: "/test.v1.TickService/Watch",
 			Transport: procframe.TransportWS,
 			Shape:     procframe.CallShapeServerStream,
@@ -332,7 +333,7 @@ func TestInvokeServerStream_NoInterceptor(t *testing.T) {
 func TestInvokeServerStream_ConnSendWrapping(t *testing.T) {
 	t.Parallel()
 
-	spec := &procframe.CallSpec{
+	spec := procframe.CallSpec{
 		Procedure: "/test.v1.TickService/Watch",
 		Transport: procframe.TransportWS,
 		Shape:     procframe.CallShapeServerStream,
@@ -345,7 +346,7 @@ func TestInvokeServerStream_ConnSendWrapping(t *testing.T) {
 		spec,
 		&procframe.Request[testRequest]{
 			Msg:  &testRequest{Message: "ping"},
-			Meta: &procframe.Meta{Procedure: spec.Procedure},
+			Meta: procframe.Meta{Procedure: spec.Procedure},
 		},
 		stream,
 		func(_ context.Context, req *procframe.Request[testRequest], stream procframe.ServerStream[testResponse]) error {
@@ -419,7 +420,7 @@ func TestInvokeClientStream_NoInterceptor(t *testing.T) {
 	}
 	resp, err := procframe.InvokeClientStream(
 		t.Context(),
-		&procframe.CallSpec{
+		procframe.CallSpec{
 			Procedure: "/test.v1.Svc/Collect",
 			Transport: procframe.TransportConnect,
 			Shape:     procframe.CallShapeClientStream,
@@ -461,7 +462,7 @@ func TestInvokeClientStream_WithInterceptor(t *testing.T) {
 
 	resp, err := procframe.InvokeClientStream(
 		t.Context(),
-		&procframe.CallSpec{
+		procframe.CallSpec{
 			Procedure: "/test.v1.Svc/Collect",
 			Transport: procframe.TransportConnect,
 			Shape:     procframe.CallShapeClientStream,
@@ -513,7 +514,7 @@ func TestInvokeBidi_NoInterceptor(t *testing.T) {
 
 	err := procframe.InvokeBidi(
 		t.Context(),
-		&procframe.CallSpec{
+		procframe.CallSpec{
 			Procedure: "/test.v1.Svc/Chat",
 			Transport: procframe.TransportWS,
 			Shape:     procframe.CallShapeBidi,
@@ -558,7 +559,7 @@ func TestInvokeBidi_WithInterceptor(t *testing.T) {
 
 	err := procframe.InvokeBidi(
 		t.Context(),
-		&procframe.CallSpec{
+		procframe.CallSpec{
 			Procedure: "/test.v1.Svc/Chat",
 			Transport: procframe.TransportWS,
 			Shape:     procframe.CallShapeBidi,
@@ -612,7 +613,7 @@ func TestInvokeServerStream_HandlerError(t *testing.T) {
 	stream := &collectingStream{getCtx: t.Context}
 	err := procframe.InvokeServerStream(
 		t.Context(),
-		&procframe.CallSpec{
+		procframe.CallSpec{
 			Procedure: "/test.v1.TickService/Watch",
 			Transport: procframe.TransportCLI,
 			Shape:     procframe.CallShapeServerStream,
@@ -640,7 +641,7 @@ func TestInvokeUnary_NilHandlerResponse(t *testing.T) {
 
 	resp, err := procframe.InvokeUnary(
 		t.Context(),
-		&procframe.CallSpec{
+		procframe.CallSpec{
 			Procedure: "/test.v1.EchoService/Echo",
 			Transport: procframe.TransportCLI,
 			Shape:     procframe.CallShapeUnary,
@@ -670,7 +671,7 @@ func TestInvokeUnary_NilHandlerPanics(t *testing.T) {
 
 	_, err := procframe.InvokeUnary[string, string](
 		t.Context(),
-		&procframe.CallSpec{Procedure: "/test/Nil", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary},
+		procframe.CallSpec{Procedure: "/test/Nil", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary},
 		&procframe.Request[string]{Msg: ptrTo("hello")},
 		nil,
 	)
@@ -690,7 +691,7 @@ func TestInvokeUnary_NilRequest(t *testing.T) {
 
 	_, err := procframe.InvokeUnary(
 		t.Context(),
-		&procframe.CallSpec{Procedure: "/test/Nil", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary},
+		procframe.CallSpec{Procedure: "/test/Nil", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary},
 		(*procframe.Request[string])(nil),
 		func(_ context.Context, _ *procframe.Request[string]) (*procframe.Response[string], error) {
 			return &procframe.Response[string]{Msg: ptrTo("ok")}, nil
@@ -707,7 +708,7 @@ func TestInterceptorFunc_Nil(t *testing.T) {
 	called := false
 	resp, err := procframe.InvokeUnary(
 		t.Context(),
-		&procframe.CallSpec{
+		procframe.CallSpec{
 			Procedure: "/test/NilIF",
 			Transport: procframe.TransportCLI,
 			Shape:     procframe.CallShapeUnary,
@@ -738,7 +739,7 @@ func TestUnaryConn_DoubleReceive(t *testing.T) {
 
 	_, err := procframe.InvokeUnary(
 		t.Context(),
-		&procframe.CallSpec{
+		procframe.CallSpec{
 			Procedure: "/test/DoubleRecv",
 			Transport: procframe.TransportCLI,
 			Shape:     procframe.CallShapeUnary,
@@ -781,7 +782,7 @@ func TestServerStreamConn_DoubleReceive(t *testing.T) {
 
 	err := procframe.InvokeServerStream(
 		t.Context(),
-		&procframe.CallSpec{
+		procframe.CallSpec{
 			Procedure: "/test/SSDoubleRecv",
 			Transport: procframe.TransportCLI,
 			Shape:     procframe.CallShapeServerStream,
@@ -816,7 +817,7 @@ func TestNewAnyResponseWithMeta(t *testing.T) {
 	t.Parallel()
 
 	msg := &testResponse{Message: "hello"}
-	meta := &procframe.Meta{
+	meta := procframe.Meta{
 		Procedure: "/test.v1.Svc/Foo",
 		RequestID: "req-123",
 	}
@@ -826,15 +827,7 @@ func TestNewAnyResponseWithMeta(t *testing.T) {
 	if got, ok := resp.Any().(*testResponse); !ok || got.Message != "hello" {
 		t.Fatalf("want *testResponse{hello}, got %T %v", resp.Any(), resp.Any())
 	}
-	if resp.Meta() == nil {
-		t.Fatal("want non-nil Meta")
-	}
-	if resp.Meta().Procedure != "/test.v1.Svc/Foo" {
-		t.Fatalf("want procedure /test.v1.Svc/Foo, got %q", resp.Meta().Procedure)
-	}
-	if resp.Meta().RequestID != "req-123" {
-		t.Fatalf("want request ID req-123, got %q", resp.Meta().RequestID)
-	}
+	assertMetaEqual(t, resp.Meta(), meta)
 }
 
 type ctxKey string
@@ -847,7 +840,7 @@ func TestInterceptorAccessesConnContext(t *testing.T) {
 	t.Run("Unary", func(t *testing.T) {
 		t.Parallel()
 		ctx := context.WithValue(t.Context(), marker, "unary-val")
-		spec := &procframe.CallSpec{
+		spec := procframe.CallSpec{
 			Procedure: "/test/Ctx",
 			Transport: procframe.TransportCLI,
 			Shape:     procframe.CallShapeUnary,
@@ -884,7 +877,7 @@ func TestInterceptorAccessesConnContext(t *testing.T) {
 
 		_, err := procframe.InvokeClientStream(
 			ctx,
-			&procframe.CallSpec{
+			procframe.CallSpec{
 				Procedure: "/test/Ctx",
 				Transport: procframe.TransportCLI,
 				Shape:     procframe.CallShapeClientStream,
@@ -930,7 +923,7 @@ func TestInterceptorAccessesConnContext(t *testing.T) {
 
 		err := procframe.InvokeServerStream(
 			ctx,
-			&procframe.CallSpec{
+			procframe.CallSpec{
 				Procedure: "/test/Ctx",
 				Transport: procframe.TransportCLI,
 				Shape:     procframe.CallShapeServerStream,
@@ -969,7 +962,7 @@ func TestInterceptorAccessesConnContext(t *testing.T) {
 
 		err := procframe.InvokeBidi(
 			ctx,
-			&procframe.CallSpec{
+			procframe.CallSpec{
 				Procedure: "/test/Ctx",
 				Transport: procframe.TransportCLI,
 				Shape:     procframe.CallShapeBidi,
@@ -1014,14 +1007,14 @@ func TestInterceptorAccessesRequestMetaAndSpec(t *testing.T) {
 
 	t.Run("Unary", func(t *testing.T) {
 		t.Parallel()
-		spec := &procframe.CallSpec{
+		spec := procframe.CallSpec{
 			Procedure: "/test.v1.Svc/MetaSpec",
 			Transport: procframe.TransportConnect,
 			Shape:     procframe.CallShapeUnary,
 		}
 		req := &procframe.Request[testRequest]{
 			Msg:  &testRequest{Message: "hi"},
-			Meta: &procframe.Meta{Procedure: spec.Procedure, RequestID: "rid-1"},
+			Meta: procframe.Meta{Procedure: spec.Procedure, RequestID: "rid-1"},
 		}
 
 		_, err := procframe.InvokeUnary(
@@ -1035,21 +1028,8 @@ func TestInterceptorAccessesRequestMetaAndSpec(t *testing.T) {
 					return next(ctx, &modifyReceiveConn{
 						Conn: conn,
 						modify: func(anyReq procframe.AnyRequest) {
-							if anyReq.Meta() == nil {
-								t.Fatal("want non-nil Meta from AnyRequest")
-							}
-							if anyReq.Meta().Procedure != spec.Procedure {
-								t.Fatalf("want procedure %q, got %q", spec.Procedure, anyReq.Meta().Procedure)
-							}
-							if anyReq.Meta().RequestID != "rid-1" {
-								t.Fatalf("want request ID rid-1, got %q", anyReq.Meta().RequestID)
-							}
-							if anyReq.Spec().Transport != procframe.TransportConnect {
-								t.Fatalf("want transport connect, got %q", anyReq.Spec().Transport)
-							}
-							if anyReq.Spec().Shape != procframe.CallShapeUnary {
-								t.Fatalf("want shape unary, got %q", anyReq.Spec().Shape)
-							}
+							assertMetaEqual(t, anyReq.Meta(), req.Meta)
+							assertCallSpecEqual(t, anyReq.Spec(), spec)
 						},
 					})
 				}
@@ -1062,7 +1042,7 @@ func TestInterceptorAccessesRequestMetaAndSpec(t *testing.T) {
 
 	t.Run("ServerStream", func(t *testing.T) {
 		t.Parallel()
-		spec := &procframe.CallSpec{
+		spec := procframe.CallSpec{
 			Procedure: "/test.v1.Svc/SSSpec",
 			Transport: procframe.TransportWS,
 			Shape:     procframe.CallShapeServerStream,
@@ -1077,12 +1057,7 @@ func TestInterceptorAccessesRequestMetaAndSpec(t *testing.T) {
 			},
 			procframe.InterceptorFunc(func(next procframe.HandlerFunc) procframe.HandlerFunc {
 				return func(ctx context.Context, conn procframe.Conn) error {
-					if conn.Spec().Transport != procframe.TransportWS {
-						t.Fatalf("want transport ws, got %q", conn.Spec().Transport)
-					}
-					if conn.Spec().Shape != procframe.CallShapeServerStream {
-						t.Fatalf("want shape server_stream, got %q", conn.Spec().Shape)
-					}
+					assertCallSpecEqual(t, conn.Spec(), spec)
 					return next(ctx, conn)
 				}
 			}),
@@ -1096,13 +1071,13 @@ func TestInterceptorAccessesRequestMetaAndSpec(t *testing.T) {
 func TestInterceptorAccessesResponseMeta(t *testing.T) {
 	t.Parallel()
 
-	spec := &procframe.CallSpec{
+	spec := procframe.CallSpec{
 		Procedure: "/test.v1.Svc/ResMeta",
 		Transport: procframe.TransportCLI,
 		Shape:     procframe.CallShapeUnary,
 	}
 
-	var capturedMeta *procframe.Meta
+	var capturedMeta procframe.Meta
 
 	_, err := procframe.InvokeUnary(
 		t.Context(), spec,
@@ -1110,7 +1085,7 @@ func TestInterceptorAccessesResponseMeta(t *testing.T) {
 		func(_ context.Context, _ *procframe.Request[testRequest]) (*procframe.Response[testResponse], error) {
 			return &procframe.Response[testResponse]{
 				Msg:  &testResponse{Message: "ok"},
-				Meta: &procframe.Meta{Procedure: spec.Procedure, RequestID: "resp-rid"},
+				Meta: procframe.Meta{Procedure: spec.Procedure, RequestID: "resp-rid"},
 			}, nil
 		},
 		procframe.InterceptorFunc(func(next procframe.HandlerFunc) procframe.HandlerFunc {
@@ -1127,21 +1102,13 @@ func TestInterceptorAccessesResponseMeta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if capturedMeta == nil {
-		t.Fatal("want non-nil Meta from AnyResponse")
-	}
-	if capturedMeta.Procedure != spec.Procedure {
-		t.Fatalf("want procedure %q, got %q", spec.Procedure, capturedMeta.Procedure)
-	}
-	if capturedMeta.RequestID != "resp-rid" {
-		t.Fatalf("want request ID resp-rid, got %q", capturedMeta.RequestID)
-	}
+	assertMetaEqual(t, capturedMeta, procframe.Meta{Procedure: spec.Procedure, RequestID: "resp-rid"})
 }
 
 func TestCastRequest_InterceptorReplacesRequest(t *testing.T) {
 	t.Parallel()
 
-	spec := &procframe.CallSpec{
+	spec := procframe.CallSpec{
 		Procedure: "/test.v1.Svc/Cast",
 		Transport: procframe.TransportCLI,
 		Shape:     procframe.CallShapeUnary,
@@ -1149,10 +1116,10 @@ func TestCastRequest_InterceptorReplacesRequest(t *testing.T) {
 
 	t.Run("happy", func(t *testing.T) {
 		t.Parallel()
-		customMeta := &procframe.Meta{Procedure: spec.Procedure, RequestID: "custom-rid"}
+		customMeta := procframe.Meta{Procedure: spec.Procedure, RequestID: "custom-rid"}
 
 		var handlerMsg string
-		var handlerMeta *procframe.Meta
+		var handlerMeta procframe.Meta
 
 		_, err := procframe.InvokeUnary(
 			t.Context(), spec,
@@ -1183,18 +1150,13 @@ func TestCastRequest_InterceptorReplacesRequest(t *testing.T) {
 		if handlerMsg != "replaced" {
 			t.Fatalf("want replaced, got %q", handlerMsg)
 		}
-		if handlerMeta == nil {
-			t.Fatal("want non-nil meta")
-		}
-		if handlerMeta.RequestID != "custom-rid" {
-			t.Fatalf("want custom-rid, got %q", handlerMeta.RequestID)
-		}
+		assertMetaEqual(t, handlerMeta, customMeta)
 	})
 
-	t.Run("nil_meta", func(t *testing.T) {
+	t.Run("zero_meta", func(t *testing.T) {
 		t.Parallel()
 
-		var handlerMeta *procframe.Meta
+		var handlerMeta procframe.Meta
 
 		_, err := procframe.InvokeUnary(
 			t.Context(), spec,
@@ -1210,7 +1172,7 @@ func TestCastRequest_InterceptorReplacesRequest(t *testing.T) {
 						recv: func() (procframe.AnyRequest, error) {
 							return &fakeAnyRequest{
 								any:  &testRequest{Message: "replaced"},
-								meta: nil,
+								meta: procframe.Meta{},
 								spec: spec,
 							}, nil
 						},
@@ -1221,9 +1183,7 @@ func TestCastRequest_InterceptorReplacesRequest(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if handlerMeta != nil {
-			t.Fatalf("want nil Meta, got %+v", handlerMeta)
-		}
+		assertMetaEqual(t, handlerMeta, procframe.Meta{})
 	})
 
 	t.Run("type_mismatch", func(t *testing.T) {
@@ -1299,7 +1259,7 @@ func TestCastRequest_InterceptorReplacesRequest(t *testing.T) {
 func TestInvokeClientStream_HandlerErrorAndNilResponse(t *testing.T) {
 	t.Parallel()
 
-	spec := &procframe.CallSpec{
+	spec := procframe.CallSpec{
 		Procedure: "/test.v1.Svc/CSErr",
 		Transport: procframe.TransportConnect,
 		Shape:     procframe.CallShapeClientStream,
@@ -1356,13 +1316,27 @@ func ptrTo[T any](v T) *T { return &v }
 // fakeAnyRequest implements procframe.AnyRequest with configurable returns.
 type fakeAnyRequest struct {
 	any  any
-	meta *procframe.Meta
-	spec *procframe.CallSpec
+	meta procframe.Meta
+	spec procframe.CallSpec
 }
 
-func (f *fakeAnyRequest) Any() any                  { return f.any }
-func (f *fakeAnyRequest) Meta() *procframe.Meta     { return f.meta }
-func (f *fakeAnyRequest) Spec() *procframe.CallSpec { return f.spec }
+func (f *fakeAnyRequest) Any() any                 { return f.any }
+func (f *fakeAnyRequest) Meta() procframe.Meta     { return f.meta }
+func (f *fakeAnyRequest) Spec() procframe.CallSpec { return f.spec }
+
+func assertMetaEqual(t *testing.T, got, want procframe.Meta) {
+	t.Helper()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("want meta %+v, got %+v", want, got)
+	}
+}
+
+func assertCallSpecEqual(t *testing.T, got, want procframe.CallSpec) {
+	t.Helper()
+	if got != want {
+		t.Fatalf("want spec %+v, got %+v", want, got)
+	}
+}
 
 // replaceReceiveConn overrides Receive() on a wrapped Conn.
 type replaceReceiveConn struct {
@@ -1446,7 +1420,7 @@ func TestInvokeUnary_InterceptorWrongTypeSend(t *testing.T) {
 
 	_, err := procframe.InvokeUnary(
 		t.Context(),
-		&procframe.CallSpec{Procedure: "/test", Transport: "test", Shape: procframe.CallShapeUnary},
+		procframe.CallSpec{Procedure: "/test", Transport: "test", Shape: procframe.CallShapeUnary},
 		&procframe.Request[int]{Msg: new(int)},
 		handler,
 		badInterceptor,

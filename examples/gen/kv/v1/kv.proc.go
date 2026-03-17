@@ -193,9 +193,9 @@ func NewKVServiceCLIRunner(h KVServiceHandler, opts ...cli.Option) *cli.Runner {
 					Key: flag_key,
 				}
 			}
-			resp, err := procframe.InvokeUnary(ctx, &procframe.CallSpec{Procedure: "/kv.v1.KVService/Get", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary}, &procframe.Request[GetRequest]{
+			resp, err := procframe.InvokeUnary(ctx, procframe.CallSpec{Procedure: "/kv.v1.KVService/Get", Transport: procframe.TransportCLI, Shape: procframe.CallShapeUnary}, &procframe.Request[GetRequest]{
 				Msg:  req,
-				Meta: &procframe.Meta{Procedure: "/kv.v1.KVService/Get"},
+				Meta: procframe.Meta{Procedure: "/kv.v1.KVService/Get"},
 			}, h.Get, cli.InterceptorsFromContext(ctx)...)
 			if err != nil {
 				return err
@@ -263,9 +263,9 @@ func NewKVServiceCLIRunner(h KVServiceHandler, opts ...cli.Option) *cli.Runner {
 				fmt.Fprintln(stdout, string(out))
 				return nil
 			})
-			return procframe.InvokeServerStream(ctx, &procframe.CallSpec{Procedure: "/kv.v1.KVService/List", Transport: procframe.TransportCLI, Shape: procframe.CallShapeServerStream}, &procframe.Request[ListRequest]{
+			return procframe.InvokeServerStream(ctx, procframe.CallSpec{Procedure: "/kv.v1.KVService/List", Transport: procframe.TransportCLI, Shape: procframe.CallShapeServerStream}, &procframe.Request[ListRequest]{
 				Msg:  req,
-				Meta: &procframe.Meta{Procedure: "/kv.v1.KVService/List"},
+				Meta: procframe.Meta{Procedure: "/kv.v1.KVService/List"},
 			}, stream, h.List, cli.InterceptorsFromContext(ctx)...)
 		},
 		HelpFlags: func() *flag.FlagSet {
