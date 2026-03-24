@@ -35,7 +35,7 @@ func TestEnumCLIValues(t *testing.T) {
 
 	t.Run("strips prefix and lowercases, excludes zero value", func(t *testing.T) {
 		t.Parallel()
-		values := []*enumValueInfo{
+		values := []enumValueInfo{
 			{ProtoName: "PULL_REQUEST_STATE_UNSPECIFIED", Number: 0},
 			{ProtoName: "PULL_REQUEST_STATE_OPEN", Number: 1},
 			{ProtoName: "PULL_REQUEST_STATE_CLOSED", Number: 2},
@@ -59,7 +59,7 @@ func TestEnumCLIValues(t *testing.T) {
 		t.Parallel()
 		// FOO_A and FOO_BAR_A both strip to "a" after prefix "FOO_BAR_"
 		// Actually let's make a real collision: same stripped values
-		values := []*enumValueInfo{
+		values := []enumValueInfo{
 			{ProtoName: "STATUS_UNSPECIFIED", Number: 0},
 			{ProtoName: "STATUS_OK", Number: 1},
 			{ProtoName: "STATUS_OK", Number: 2},
@@ -72,7 +72,7 @@ func TestEnumCLIValues(t *testing.T) {
 
 	t.Run("short enum name", func(t *testing.T) {
 		t.Parallel()
-		values := []*enumValueInfo{
+		values := []enumValueInfo{
 			{ProtoName: "X_UNSPECIFIED", Number: 0},
 			{ProtoName: "X_A", Number: 1},
 			{ProtoName: "X_B", Number: 2},
@@ -91,7 +91,7 @@ func TestEnumCLIValues(t *testing.T) {
 
 	t.Run("no common prefix falls back to lowercase", func(t *testing.T) {
 		t.Parallel()
-		values := []*enumValueInfo{
+		values := []enumValueInfo{
 			{ProtoName: "COLOR_UNSPECIFIED", Number: 0},
 			{ProtoName: "ALPHA", Number: 1},
 			{ProtoName: "BETA", Number: 2},
@@ -167,10 +167,8 @@ func TestEnumCLIValues_EdgeCases(t *testing.T) {
 
 	t.Run("nil_entry_in_slice", func(t *testing.T) {
 		t.Parallel()
-		values := []*enumValueInfo{
-			nil,
+		values := []enumValueInfo{
 			{ProtoName: "STATUS_OK", Number: 1},
-			nil,
 			{ProtoName: "STATUS_ERROR", Number: 2},
 		}
 		got, err := enumCLIValues("Status", values)
@@ -178,13 +176,13 @@ func TestEnumCLIValues_EdgeCases(t *testing.T) {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if len(got) != 2 {
-			t.Fatalf("want 2 mappings (nil entries skipped), got %d", len(got))
+			t.Fatalf("want 2 mappings, got %d", len(got))
 		}
 	})
 
 	t.Run("empty_type_name", func(t *testing.T) {
 		t.Parallel()
-		values := []*enumValueInfo{
+		values := []enumValueInfo{
 			{ProtoName: "VALUE_A", Number: 1},
 			{ProtoName: "VALUE_B", Number: 2},
 		}
@@ -197,7 +195,7 @@ func TestEnumCLIValues_EdgeCases(t *testing.T) {
 
 	t.Run("all_zero_values", func(t *testing.T) {
 		t.Parallel()
-		values := []*enumValueInfo{
+		values := []enumValueInfo{
 			{ProtoName: "UNSPECIFIED", Number: 0},
 		}
 		got, err := enumCLIValues("Status", values)
@@ -212,7 +210,7 @@ func TestEnumCLIValues_EdgeCases(t *testing.T) {
 	t.Run("case_folding_collision", func(t *testing.T) {
 		t.Parallel()
 		// After prefix strip and lowercase: both become "ok"
-		values := []*enumValueInfo{
+		values := []enumValueInfo{
 			{ProtoName: "STATUS_OK", Number: 1},
 			{ProtoName: "STATUS_Ok", Number: 2}, // different case, same after lowercase
 		}

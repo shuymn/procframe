@@ -22,7 +22,7 @@ func TestValidateConfigInfo(t *testing.T) {
 						GoName:       "LogLevel",
 						Kind:         protoreflect.EnumKind,
 						EnumTypeName: "LogLevel",
-						EnumValues: []*enumValueInfo{
+						EnumValues: []enumValueInfo{
 							{ProtoName: "LOG_LEVEL_UNSPECIFIED", Number: 0},
 							{ProtoName: "LOG_LEVEL_INFO", Number: 1},
 							{ProtoName: "LOG_LEVEL_DEBUG", Number: 2},
@@ -354,7 +354,7 @@ func TestValidateConfigInfo(t *testing.T) {
 						GoName:       "LogLevel",
 						Kind:         protoreflect.EnumKind,
 						EnumTypeName: "LogLevel",
-						EnumValues: []*enumValueInfo{
+						EnumValues: []enumValueInfo{
 							{ProtoName: "LOG_LEVEL_UNSPECIFIED", Number: 0},
 							{ProtoName: "LOG_LEVEL_INFO", Number: 1},
 						},
@@ -491,7 +491,7 @@ func TestValidateConfigCollisions(t *testing.T) {
 func TestErrMultipleConfigMessages(t *testing.T) {
 	t.Parallel()
 
-	err := errMultipleConfigMessages("foo/config.proto", []*configMessageInfo{
+	err := errMultipleConfigMessages("foo/config.proto", []configMessageInfo{
 		{GoName: "BConfig"},
 		{GoName: "AConfig"},
 	})

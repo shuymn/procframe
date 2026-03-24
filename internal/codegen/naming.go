@@ -22,15 +22,12 @@ func fieldToFlagName(name string) string {
 
 // enumCLIValues strips the type-derived prefix from enum value names,
 // lowercases the remainder, and detects collisions.
-func enumCLIValues(typeName string, values []*enumValueInfo) ([]cli.EnumMapping, error) {
+func enumCLIValues(typeName string, values []enumValueInfo) ([]cli.EnumMapping, error) {
 	prefix := camelToUpperSnake(typeName) + "_"
 	mappings := make([]cli.EnumMapping, 0, len(values))
 	seen := make(map[string]string, len(values))
 
 	for _, v := range values {
-		if v == nil {
-			continue
-		}
 		if v.Number == 0 {
 			continue
 		}

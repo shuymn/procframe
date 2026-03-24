@@ -140,12 +140,12 @@ func extractConfigInfo(file *protogen.File, params *Params) (*configInfo, error)
 	}
 	return &configInfo{
 		FilePath: file.Desc.Path(),
-		Message:  candidates[0],
+		Message:  &candidates[0],
 	}, nil
 }
 
-func collectConfigCandidates(messages []*protogen.Message) []*configMessageInfo {
-	candidates := make([]*configMessageInfo, 0, len(messages))
+func collectConfigCandidates(messages []*protogen.Message) []configMessageInfo {
+	candidates := make([]configMessageInfo, 0, len(messages))
 	for _, msg := range messages {
 		info, ok := extractConfigMessageInfo(msg)
 		if !ok {
@@ -156,7 +156,7 @@ func collectConfigCandidates(messages []*protogen.Message) []*configMessageInfo 
 	return candidates
 }
 
-func extractConfigMessageInfo(msg *protogen.Message) (*configMessageInfo, bool) {
+func extractConfigMessageInfo(msg *protogen.Message) (configMessageInfo, bool) {
 	fields := make([]*configFieldInfo, 0, len(msg.Fields))
 	for _, field := range msg.Fields {
 		cfgOpt, ok := getConfigFieldOptions(field)
@@ -166,9 +166,9 @@ func extractConfigMessageInfo(msg *protogen.Message) (*configMessageInfo, bool) 
 		fields = append(fields, extractConfigFieldInfo(field, cfgOpt))
 	}
 	if len(fields) == 0 {
-		return nil, false
+		return configMessageInfo{}, false
 	}
-	return &configMessageInfo{
+	return configMessageInfo{
 		GoName: msg.GoIdent.GoName,
 		Fields: fields,
 	}, true
@@ -205,10 +205,10 @@ func extractConfigFieldInfo(
 	return info
 }
 
-func extractEnumValueInfos(enum *protogen.Enum) []*enumValueInfo {
-	values := make([]*enumValueInfo, 0, len(enum.Values))
+func extractEnumValueInfos(enum *protogen.Enum) []enumValueInfo {
+	values := make([]enumValueInfo, 0, len(enum.Values))
 	for _, v := range enum.Values {
-		values = append(values, &enumValueInfo{
+		values = append(values, enumValueInfo{
 			ProtoName: string(v.Desc.Name()),
 			Number:    int32(v.Desc.Number()),
 		})

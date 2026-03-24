@@ -26,7 +26,7 @@ type configFieldInfo struct {
 
 	EnumTypeName string
 	EnumGoIdent  protogen.GoIdent
-	EnumValues   []*enumValueInfo
+	EnumValues   []enumValueInfo
 
 	Env        string
 	HasEnv     bool

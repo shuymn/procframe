@@ -59,9 +59,9 @@ func checkMessageEnums(msg *protogen.Message, checked map[string]bool) error {
 		}
 		checked[enumName] = true
 
-		values := make([]*enumValueInfo, 0, len(field.Enum.Values))
+		values := make([]enumValueInfo, 0, len(field.Enum.Values))
 		for _, v := range field.Enum.Values {
-			values = append(values, &enumValueInfo{
+			values = append(values, enumValueInfo{
 				ProtoName: string(v.Desc.Name()),
 				Number:    int32(v.Desc.Number()),
 			})
@@ -233,7 +233,7 @@ func validateConfigBootstrap(
 	return nil
 }
 
-func errMultipleConfigMessages(filePath string, msgs []*configMessageInfo) error {
+func errMultipleConfigMessages(filePath string, msgs []configMessageInfo) error {
 	names := make([]string, 0, len(msgs))
 	for _, msg := range msgs {
 		names = append(names, msg.GoName)

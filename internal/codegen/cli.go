@@ -203,8 +203,9 @@ func emitGroupDecl(g *protogen.GeneratedFile, d nodeDecl, bindCtxs []bindIntoCtx
 		g.P("\t\tHidden: true,")
 	}
 	if d.node.BindInto != "" {
-		bc := findBindCtx(bindCtxs, d.node.BindInto)
-		emitGroupFlagSet(g, d, bc)
+		if bc := findBindCtx(bindCtxs, d.node.BindInto); bc != nil {
+			emitGroupFlagSet(g, d, bc)
+		}
 	}
 	g.P("\t\tChildren: map[string]*", cliPkg.Ident("Node"), "{")
 	childNames := sortedKeys(d.node.Children)
@@ -229,9 +230,7 @@ func emitGroupFlagSet(g *protogen.GeneratedFile, d nodeDecl, bc *bindIntoCtx) {
 		")",
 	)
 	g.P("\t\t\tfs.SetOutput(", ioPkg.Ident("Discard"), ")")
-	if bc != nil {
-		emitBindIntoFlagRegistration(g, bc, "\t\t\t")
-	}
+	emitBindIntoFlagRegistration(g, bc, "\t\t\t")
 	g.P("\t\t\treturn fs")
 	g.P("\t\t}(),")
 }
@@ -339,8 +338,8 @@ func emitHelpFlagReg(g *protogen.GeneratedFile, field *protogen.Field, indent st
 	}
 
 	// Singular scalar/message/bytes
-	ti := resolveFieldType(field)
-	if ti == nil {
+	ti, ok := resolveFieldType(field)
+	if !ok {
 		return
 	}
 	if ti.stdFlagFunc != "" {
@@ -373,8 +372,8 @@ func emitHelpRepeatedFlagReg(
 		protoreflect.Uint32Kind, protoreflect.Fixed32Kind,
 		protoreflect.Uint64Kind, protoreflect.Fixed64Kind,
 		protoreflect.FloatKind, protoreflect.DoubleKind:
-		ri := resolveRepeatedFieldType(field)
-		if ri != nil {
+		ri, ok := resolveRepeatedFieldType(field)
+		if ok {
 			g.P(indent, "fs.Var(", cliPkg.Ident(ri.constructor), "(nil), ", qName, ", ", qUsage, ")")
 		}
 	}
@@ -808,8 +807,8 @@ func emitFlagVar(g *protogen.GeneratedFile, field *protogen.Field, indent string
 			protoreflect.Uint32Kind, protoreflect.Fixed32Kind,
 			protoreflect.Uint64Kind, protoreflect.Fixed64Kind,
 			protoreflect.FloatKind, protoreflect.DoubleKind:
-			ri := resolveRepeatedFieldType(field)
-			if ri == nil {
+			ri, ok := resolveRepeatedFieldType(field)
+			if !ok {
 				return
 			}
 			g.P(indent, "var ", varName, " ", ri.goType)
@@ -825,8 +824,8 @@ func emitFlagVar(g *protogen.GeneratedFile, field *protogen.Field, indent string
 	}
 
 	// Singular scalar/message/bytes
-	ti := resolveFieldType(field)
-	if ti == nil {
+	ti, ok := resolveFieldType(field)
+	if !ok {
 		return
 	}
 
@@ -840,27 +839,27 @@ type repeatedFieldTypeInfo struct {
 	constructor string
 }
 
-func resolveRepeatedFieldType(field *protogen.Field) *repeatedFieldTypeInfo {
+func resolveRepeatedFieldType(field *protogen.Field) (repeatedFieldTypeInfo, bool) {
 	switch field.Desc.Kind() {
 	case protoreflect.BoolKind:
-		return &repeatedFieldTypeInfo{goType: "[]bool", constructor: "NewBoolSliceValue"}
+		return repeatedFieldTypeInfo{goType: "[]bool", constructor: "NewBoolSliceValue"}, true
 	case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
-		return &repeatedFieldTypeInfo{goType: "[]int32", constructor: "NewInt32SliceValue"}
+		return repeatedFieldTypeInfo{goType: "[]int32", constructor: "NewInt32SliceValue"}, true
 	case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
-		return &repeatedFieldTypeInfo{goType: "[]int64", constructor: "NewInt64SliceValue"}
+		return repeatedFieldTypeInfo{goType: "[]int64", constructor: "NewInt64SliceValue"}, true
 	case protoreflect.Uint32Kind, protoreflect.Fixed32Kind:
-		return &repeatedFieldTypeInfo{goType: "[]uint32", constructor: "NewUint32SliceValue"}
+		return repeatedFieldTypeInfo{goType: "[]uint32", constructor: "NewUint32SliceValue"}, true
 	case protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
-		return &repeatedFieldTypeInfo{goType: "[]uint64", constructor: "NewUint64SliceValue"}
+		return repeatedFieldTypeInfo{goType: "[]uint64", constructor: "NewUint64SliceValue"}, true
 	case protoreflect.FloatKind:
-		return &repeatedFieldTypeInfo{goType: "[]float32", constructor: "NewFloat32SliceValue"}
+		return repeatedFieldTypeInfo{goType: "[]float32", constructor: "NewFloat32SliceValue"}, true
 	case protoreflect.DoubleKind:
-		return &repeatedFieldTypeInfo{goType: "[]float64", constructor: "NewFloat64SliceValue"}
+		return repeatedFieldTypeInfo{goType: "[]float64", constructor: "NewFloat64SliceValue"}, true
 	case protoreflect.EnumKind, protoreflect.StringKind,
 		protoreflect.BytesKind, protoreflect.MessageKind, protoreflect.GroupKind:
-		return nil
+		return repeatedFieldTypeInfo{}, false
 	default:
-		return nil
+		return repeatedFieldTypeInfo{}, false
 	}
 }
 
@@ -898,36 +897,36 @@ type fieldTypeInfo struct {
 	defaultVal  string // default value for stdlib flag funcs
 }
 
-func resolveFieldType(field *protogen.Field) *fieldTypeInfo {
+func resolveFieldType(field *protogen.Field) (fieldTypeInfo, bool) {
 	switch field.Desc.Kind() {
 	case protoreflect.StringKind:
-		return &fieldTypeInfo{goType: "string", stdFlagFunc: "StringVar", defaultVal: `""`}
+		return fieldTypeInfo{goType: "string", stdFlagFunc: "StringVar", defaultVal: `""`}, true
 	case protoreflect.BoolKind:
-		return &fieldTypeInfo{goType: "bool", stdFlagFunc: "BoolVar", defaultVal: "false"}
+		return fieldTypeInfo{goType: "bool", stdFlagFunc: "BoolVar", defaultVal: "false"}, true
 	case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
-		return &fieldTypeInfo{goType: "int32", constructor: "NewInt32Value"}
+		return fieldTypeInfo{goType: "int32", constructor: "NewInt32Value"}, true
 	case protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
-		return &fieldTypeInfo{goType: "int64", constructor: "NewInt64Value"}
+		return fieldTypeInfo{goType: "int64", constructor: "NewInt64Value"}, true
 	case protoreflect.Uint32Kind, protoreflect.Fixed32Kind:
-		return &fieldTypeInfo{goType: "uint32", constructor: "NewUint32Value"}
+		return fieldTypeInfo{goType: "uint32", constructor: "NewUint32Value"}, true
 	case protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
-		return &fieldTypeInfo{goType: "uint64", constructor: "NewUint64Value"}
+		return fieldTypeInfo{goType: "uint64", constructor: "NewUint64Value"}, true
 	case protoreflect.FloatKind:
-		return &fieldTypeInfo{goType: "float32", constructor: "NewFloat32Value"}
+		return fieldTypeInfo{goType: "float32", constructor: "NewFloat32Value"}, true
 	case protoreflect.DoubleKind:
-		return &fieldTypeInfo{goType: "float64", stdFlagFunc: "Float64Var", defaultVal: "0"}
+		return fieldTypeInfo{goType: "float64", stdFlagFunc: "Float64Var", defaultVal: "0"}, true
 	case protoreflect.BytesKind:
-		return &fieldTypeInfo{goType: "string", stdFlagFunc: "StringVar", defaultVal: `""`}
+		return fieldTypeInfo{goType: "string", stdFlagFunc: "StringVar", defaultVal: `""`}, true
 	case protoreflect.MessageKind, protoreflect.GroupKind:
-		return &fieldTypeInfo{goType: "string", stdFlagFunc: "StringVar", defaultVal: `""`}
+		return fieldTypeInfo{goType: "string", stdFlagFunc: "StringVar", defaultVal: `""`}, true
 	case protoreflect.EnumKind:
-		return nil
+		return fieldTypeInfo{}, false
 	default:
-		return nil
+		return fieldTypeInfo{}, false
 	}
 }
 
-func emitFlagReg(g *protogen.GeneratedFile, indent string, ti *fieldTypeInfo, varName, flagName, usage string) {
+func emitFlagReg(g *protogen.GeneratedFile, indent string, ti fieldTypeInfo, varName, flagName, usage string) {
 	if ti.stdFlagFunc != "" {
 		g.P(
 			indent,
@@ -1140,8 +1139,8 @@ func resolveBindIntoCtxs(tree *treeNode, svc *protogen.Service) []bindIntoCtx {
 
 func collectBindInto(node *treeNode, svc *protogen.Service, ctxs *[]bindIntoCtx) {
 	if node.BindInto != "" {
-		if bc := resolveOneBindInto(node.BindInto, svc); bc != nil {
-			*ctxs = append(*ctxs, *bc)
+		if bc, ok := resolveOneBindInto(node.BindInto, svc); ok {
+			*ctxs = append(*ctxs, bc)
 		}
 	}
 	for _, child := range node.Children {
@@ -1149,20 +1148,20 @@ func collectBindInto(node *treeNode, svc *protogen.Service, ctxs *[]bindIntoCtx)
 	}
 }
 
-func resolveOneBindInto(fieldName string, svc *protogen.Service) *bindIntoCtx {
+func resolveOneBindInto(fieldName string, svc *protogen.Service) (bindIntoCtx, bool) {
 	for _, m := range svc.Methods {
 		for _, f := range m.Input.Fields {
 			if string(f.Desc.Name()) == fieldName && f.Message != nil {
-				return &bindIntoCtx{
+				return bindIntoCtx{
 					fieldName:   fieldName,
 					goFieldName: f.GoName,
 					msg:         f.Message,
 					varPrefix:   "bind_" + fieldName,
-				}
+				}, true
 			}
 		}
 	}
-	return nil
+	return bindIntoCtx{}, false
 }
 
 func findBindCtx(ctxs []bindIntoCtx, fieldName string) *bindIntoCtx {
@@ -1205,8 +1204,8 @@ func emitVarDecl(g *protogen.GeneratedFile, field *protogen.Field, varName, inde
 			protoreflect.Uint32Kind, protoreflect.Fixed32Kind,
 			protoreflect.Uint64Kind, protoreflect.Fixed64Kind,
 			protoreflect.FloatKind, protoreflect.DoubleKind:
-			ri := resolveRepeatedFieldType(field)
-			if ri != nil {
+			ri, ok := resolveRepeatedFieldType(field)
+			if ok {
 				g.P(indent, "var ", varName, " ", ri.goType)
 			}
 		}
@@ -1220,8 +1219,8 @@ func emitVarDecl(g *protogen.GeneratedFile, field *protogen.Field, varName, inde
 	}
 
 	// Singular scalar/message/bytes
-	ti := resolveFieldType(field)
-	if ti != nil {
+	ti, ok := resolveFieldType(field)
+	if ok {
 		g.P(indent, "var ", varName, " ", ti.goType)
 	}
 }
@@ -1273,8 +1272,8 @@ func emitBindIntoFlagReg(
 			protoreflect.Uint32Kind, protoreflect.Fixed32Kind,
 			protoreflect.Uint64Kind, protoreflect.Fixed64Kind,
 			protoreflect.FloatKind, protoreflect.DoubleKind:
-			ri := resolveRepeatedFieldType(field)
-			if ri != nil {
+			ri, ok := resolveRepeatedFieldType(field)
+			if ok {
 				emitFsVar(g, indent, ri.constructor, varName, flagName, usage)
 			}
 		}
@@ -1288,8 +1287,8 @@ func emitBindIntoFlagReg(
 	}
 
 	// Singular scalar/message/bytes
-	ti := resolveFieldType(field)
-	if ti != nil {
+	ti, ok := resolveFieldType(field)
+	if ok {
 		emitFlagReg(g, indent, ti, varName, flagName, usage)
 	}
 }
