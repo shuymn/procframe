@@ -43,4 +43,10 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
           GH_TOKEN: ${{ github.token }}
-        run: gh release edit "$RELEASE_TAG" --draft=false
+        run: |
+          for i in 1 2 3 4 5; do
+            gh release edit "$RELEASE_TAG" --draft=false && exit 0
+            sleep $((i * 2))
+          done
+          echo "failed to publish release after retries" >&2
+          exit 1
