@@ -29,6 +29,13 @@ All transports support all 4 RPC shapes (unary, client-stream, server-stream, bi
 go get github.com/shuymn/procframe
 ```
 
+Proto options (add to your `buf.yaml` deps):
+
+```yaml
+deps:
+  - buf.build/procframe/proto
+```
+
 Code generation plugin:
 
 ```bash
