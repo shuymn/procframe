@@ -5,7 +5,7 @@ project_name: protoc-gen-procframe-go
 
 before:
   hooks:
-    - go mod tidy
+    - go mod download
 
 builds:
   - id: protoc-gen-procframe-go
