@@ -9,12 +9,19 @@
 
 # Local binaries (golangci-lint etc.)
 /bin/
+/protoc-gen-procframe-go
 
 # Go cache (local for LLM access)
 /.cache/
 
 # Example binaries
 /examples/kv/kv
+
+# GoReleaser output
+/dist/
+
+# Third-party licenses (generated at release time)
+/third_party_licenses/
 
 # env files
 .env
