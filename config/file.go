@@ -98,21 +98,17 @@ func redactSecretError(prefix string, err error, data []byte, secretFields []str
 	}
 	return &redactedError{
 		msg: prefix + ": " + redactedErr,
-		err: err,
 	}
 }
 
+// redactedError intentionally does not implement Unwrap to prevent callers
+// from reaching the original error, which may contain unredacted secret values.
 type redactedError struct {
 	msg string
-	err error
 }
 
 func (e *redactedError) Error() string {
 	return e.msg
-}
-
-func (e *redactedError) Unwrap() error {
-	return e.err
 }
 
 func secretJSONValueTokens(merged []byte, secretFields []string) []string {

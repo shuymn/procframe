@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestRedactSecretErrorPreservesWrapping(t *testing.T) {
+func TestRedactSecretErrorDoesNotExposeCause(t *testing.T) {
 	t.Parallel()
 
 	baseErr := errors.New(`invalid value "secret-token"`)
@@ -20,8 +20,8 @@ func TestRedactSecretErrorPreservesWrapping(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !errors.Is(err, baseErr) {
-		t.Fatalf("want wrapped base error, got: %v", err)
+	if errors.Is(err, baseErr) {
+		t.Fatalf("redacted error must not expose wrapped cause: %v", err)
 	}
 	if got := err.Error(); got == baseErr.Error() {
 		t.Fatalf("want redacted message, got original: %q", got)
