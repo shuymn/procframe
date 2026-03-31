@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -997,6 +998,37 @@ func TestMergeJSONFile_SecretRedactionInErrors(t *testing.T) {
 		}
 		if strings.Contains(err.Error(), "classified-key-abc") {
 			t.Error("VULNERABLE: secret apiToken value leaked in unknown field error")
+		}
+		checkNoInternalExposure(t, err.Error())
+	})
+
+	t.Run("snake_case_field_parser_error_does_not_leak_secret", func(t *testing.T) {
+		t.Parallel()
+
+		path := writeConfigFile(t, `{
+			"api_token": "classified-key-abc"
+		}`)
+
+		dst := &testv1.RuntimeConfig{}
+		parsers := map[string]config.JSONFieldParser{
+			"apiToken": func(raw json.RawMessage) (any, error) {
+				var decoded string
+				if err := json.Unmarshal(raw, &decoded); err != nil {
+					return nil, err
+				}
+				return nil, fmt.Errorf("invalid secret value %q", decoded)
+			},
+		}
+
+		_, err := config.MergeJSONFileWithParsers(path, dst, parsers, "apiToken")
+		if err == nil {
+			t.Fatal("expected parser error for secret field")
+		}
+		if strings.Contains(err.Error(), "classified-key-abc") {
+			t.Error("VULNERABLE: canonicalized parser error leaked secret value")
+		}
+		if !strings.Contains(err.Error(), config.RedactedPlaceholder) {
+			t.Fatalf("want redaction placeholder in error: %v", err)
 		}
 		checkNoInternalExposure(t, err.Error())
 	})

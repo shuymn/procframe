@@ -59,7 +59,16 @@ func mergeJSONFile(
 	for k, raw := range rawOverlay {
 		v, decodeErr := decodeJSONOverlayValue(k, raw, parsers)
 		if decodeErr != nil {
-			return nil, redactSecretError("parse config JSON field "+strconv.Quote(k), decodeErr, data, secretFields)
+			redactionData := data
+			if canonicalData, marshalErr := json.Marshal(rawOverlay); marshalErr == nil {
+				redactionData = canonicalData
+			}
+			return nil, redactSecretError(
+				"parse config JSON field "+strconv.Quote(k),
+				decodeErr,
+				redactionData,
+				secretFields,
+			)
 		}
 		base[k] = v
 	}
