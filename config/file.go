@@ -88,7 +88,23 @@ func redactSecretError(prefix string, err error, data []byte, secretFields []str
 	for _, token := range secretJSONValueTokens(data, secretFields) {
 		redactedErr = strings.ReplaceAll(redactedErr, token, RedactedPlaceholder)
 	}
-	return fmt.Errorf("%s: %v", prefix, redactedErr)
+	return &redactedError{
+		msg: prefix + ": " + redactedErr,
+		err: err,
+	}
+}
+
+type redactedError struct {
+	msg string
+	err error
+}
+
+func (e *redactedError) Error() string {
+	return e.msg
+}
+
+func (e *redactedError) Unwrap() error {
+	return e.err
 }
 
 func secretJSONValueTokens(merged []byte, secretFields []string) []string {
