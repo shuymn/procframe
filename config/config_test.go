@@ -1,6 +1,7 @@
 package config_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -436,6 +437,74 @@ func TestGeneratedConfigLoad(t *testing.T) {
 		}
 		if strings.Join(rest, " ") != "echo run" {
 			t.Fatalf("unexpected rest args: %v", rest)
+		}
+	})
+
+	t.Run("file accepts enum alias", func(t *testing.T) {
+		t.Setenv("API_TOKEN", "env-token")
+
+		path := writeConfigFile(t, `{"logLevel":"debug"}`)
+		cfg, _, err := config.Load[testv1.RuntimeConfig]([]string{"--config", path, "echo"})
+		if err != nil {
+			t.Fatalf("Load returned error: %v", err)
+		}
+		if cfg.LogLevel != testv1.LogLevel_LOG_LEVEL_DEBUG {
+			t.Fatalf("want log level from alias, got %v", cfg.LogLevel)
+		}
+	})
+
+	t.Run("file accepts proto enum name", func(t *testing.T) {
+		t.Setenv("API_TOKEN", "env-token")
+
+		path := writeConfigFile(t, `{"logLevel":"LOG_LEVEL_DEBUG"}`)
+		cfg, _, err := config.Load[testv1.RuntimeConfig]([]string{"--config", path, "echo"})
+		if err != nil {
+			t.Fatalf("Load returned error: %v", err)
+		}
+		if cfg.LogLevel != testv1.LogLevel_LOG_LEVEL_DEBUG {
+			t.Fatalf("want log level from proto enum name, got %v", cfg.LogLevel)
+		}
+	})
+
+	t.Run("file accepts enum number", func(t *testing.T) {
+		t.Setenv("API_TOKEN", "env-token")
+
+		path := writeConfigFile(t, `{"logLevel":2}`)
+		cfg, _, err := config.Load[testv1.RuntimeConfig]([]string{"--config", path, "echo"})
+		if err != nil {
+			t.Fatalf("Load returned error: %v", err)
+		}
+		if cfg.LogLevel != testv1.LogLevel_LOG_LEVEL_DEBUG {
+			t.Fatalf("want log level from enum number, got %v", cfg.LogLevel)
+		}
+	})
+
+	t.Run("file accepts enum numeric string", func(t *testing.T) {
+		t.Setenv("API_TOKEN", "env-token")
+
+		path := writeConfigFile(t, `{"logLevel":"2"}`)
+		cfg, _, err := config.Load[testv1.RuntimeConfig]([]string{"--config", path, "echo"})
+		if err != nil {
+			t.Fatalf("Load returned error: %v", err)
+		}
+		if cfg.LogLevel != testv1.LogLevel_LOG_LEVEL_DEBUG {
+			t.Fatalf("want log level from enum numeric string, got %v", cfg.LogLevel)
+		}
+	})
+
+	t.Run("file rejects invalid enum alias with allowed values", func(t *testing.T) {
+		t.Setenv("API_TOKEN", "env-token")
+
+		path := writeConfigFile(t, `{"logLevel":"trace"}`)
+		_, _, err := config.Load[testv1.RuntimeConfig]([]string{"--config", path, "echo"})
+		if err == nil {
+			t.Fatal("expected invalid enum error")
+		}
+		if !strings.Contains(err.Error(), `invalid LogLevel value "trace"`) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(err.Error(), "info, debug") {
+			t.Fatalf("want allowed values in error, got: %v", err)
 		}
 	})
 
@@ -931,6 +1000,97 @@ func TestMergeJSONFile_SecretRedactionInErrors(t *testing.T) {
 			t.Error("VULNERABLE: secret apiToken value leaked in unknown field error")
 		}
 		checkNoInternalExposure(t, err.Error())
+	})
+
+	for _, tt := range []struct {
+		name        string
+		secretField string
+		secretValue string
+	}{
+		{"camelCase_secret_field", "apiToken", "classified-key-abc"},
+		{"snake_case_secret_field", "api_token", "classified-key-xyz"},
+	} {
+		t.Run(tt.name+"_parser_error_does_not_leak_secret", func(t *testing.T) {
+			t.Parallel()
+
+			path := writeConfigFile(t, `{
+				"api_token": "`+tt.secretValue+`"
+			}`)
+
+			dst := &testv1.RuntimeConfig{}
+			parsers := map[string]config.JSONFieldParser{
+				"apiToken": func(raw json.RawMessage) (any, error) {
+					var decoded string
+					if err := json.Unmarshal(raw, &decoded); err != nil {
+						return nil, err
+					}
+					return nil, fmt.Errorf("invalid secret value %q", decoded)
+				},
+			}
+
+			_, err := config.MergeJSONFileWithParsers(path, dst, parsers, tt.secretField)
+			if err == nil {
+				t.Fatal("expected parser error for secret field")
+			}
+			if strings.Contains(err.Error(), tt.secretValue) {
+				t.Errorf("VULNERABLE: secret field %q leaked in error", tt.secretField)
+			}
+			if !strings.Contains(err.Error(), config.RedactedPlaceholder) {
+				t.Fatalf("want redaction placeholder in error: %v", err)
+			}
+			checkNoInternalExposure(t, err.Error())
+		})
+	}
+
+	t.Run("parser lookup accepts protobuf field names", func(t *testing.T) {
+		t.Parallel()
+
+		path := writeConfigFile(t, `{
+			"api_token": "from-file"
+		}`)
+
+		dst := &testv1.RuntimeConfig{}
+		parsers := map[string]config.JSONFieldParser{
+			"api_token": func(raw json.RawMessage) (any, error) {
+				var decoded string
+				if err := json.Unmarshal(raw, &decoded); err != nil {
+					return nil, err
+				}
+				return decoded + "-parsed", nil
+			},
+		}
+
+		_, err := config.MergeJSONFileWithParsers(path, dst, parsers, "apiToken")
+		if err != nil {
+			t.Fatalf("MergeJSONFileWithParsers returned error: %v", err)
+		}
+		if dst.ApiToken != "from-file-parsed" {
+			t.Fatalf("want parser applied via protobuf field name, got %q", dst.ApiToken)
+		}
+	})
+
+	t.Run("parser key canonical collision returns error", func(t *testing.T) {
+		t.Parallel()
+
+		path := writeConfigFile(t, `{"apiToken":"from-file"}`)
+
+		dst := &testv1.RuntimeConfig{}
+		parsers := map[string]config.JSONFieldParser{
+			"apiToken": func(raw json.RawMessage) (any, error) {
+				return string(raw), nil
+			},
+			"api_token": func(raw json.RawMessage) (any, error) {
+				return string(raw), nil
+			},
+		}
+
+		_, err := config.MergeJSONFileWithParsers(path, dst, parsers, "apiToken")
+		if err == nil {
+			t.Fatal("expected parser key collision error")
+		}
+		if !strings.Contains(err.Error(), `"apiToken"`) || !strings.Contains(err.Error(), `"api_token"`) {
+			t.Fatalf("unexpected error: %v", err)
+		}
 	})
 }
 

@@ -85,6 +85,7 @@
   - Acceptance (EARS):
     - When file 名が `config.proto` で top-level message に ConfigFieldOptions を付けた scalar/enum field があるとき protoc-gen-procframe-go が LoadRuntimeConfig 関数と generated runtime config pointer に対する secret-safe `fmt.Formatter` 実装を生成する
     - When JSON config ファイル、環境変数、bootstrap CLI flags を組み合わせて LoadRuntimeConfig を呼ぶと defaults → file → env → bootstrap の優先順位で merge された config が返る
+    - When JSON config ファイルで enum field を指定すると stripped lowercase alias、proto enum 名、数値のいずれでも受理される
     - When `required=true` のフィールドが未設定のとき error が返る
     - When `bootstrap=true` のフィールドは argv 先頭の連続 token だけ bootstrap flags として parse され、最初の非-bootstrap token 以降が procedure args として返る
     - When `secret=true` のフィールドを持つ generated runtime config pointer を `fmt` 経由で出力しても secret 値は露出せず、error 文脈でも値が露出しない

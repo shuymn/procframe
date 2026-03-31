@@ -44,3 +44,7 @@ func (f *configFieldInfo) FlagName() string {
 func (f *configFieldInfo) NeedsStringParser() bool {
 	return f.HasDefault || f.HasEnv || f.Bootstrap
 }
+
+func (f *configFieldInfo) NeedsJSONFieldParser() bool {
+	return f.Kind == protoreflect.EnumKind && !f.IsList && !f.IsMap
+}

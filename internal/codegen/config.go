@@ -51,6 +51,7 @@ func emitLoadConfigFile(g *protogen.GeneratedFile, cfg *configInfo) {
 	)
 	secretFields := make([]string, 0, len(cfg.Message.Fields))
 	requiredFields := make([]*configFieldInfo, 0, len(cfg.Message.Fields))
+	enumFields := make([]*configFieldInfo, 0, len(cfg.Message.Fields))
 	for _, field := range cfg.Message.Fields {
 		if field.Secret {
 			secretFields = append(secretFields, field.JSONName)
@@ -58,14 +59,29 @@ func emitLoadConfigFile(g *protogen.GeneratedFile, cfg *configInfo) {
 		if field.Required {
 			requiredFields = append(requiredFields, field)
 		}
+		if field.NeedsJSONFieldParser() {
+			enumFields = append(enumFields, field)
+		}
 	}
-	args := []any{"\treturn ", configPkg.Ident("MergeJSONFile"), "(filePath, cfg"}
+	args := []any{"\tpresentFields, err := ", configPkg.Ident("MergeJSONFileWithParsers"), "(filePath, cfg"}
+	if len(enumFields) == 0 {
+		args = append(args, ", nil")
+	} else {
+		args = append(args, ", map[string]", configPkg.Ident("JSONFieldParser"), "{")
+		for _, field := range enumFields {
+			args = append(args,
+				strconv.Quote(field.JSONName), ": ",
+				configFileFieldParserName(field),
+				", ",
+			)
+		}
+		args = append(args, "}")
+	}
 	for _, fieldName := range secretFields {
 		args = append(args, ", ", strconv.Quote(fieldName))
 	}
 	args = append(args, ")")
-	loadArgs := append([]any{"\tpresentFields, err := "}, args[1:]...)
-	g.P(loadArgs...)
+	g.P(args...)
 	g.P("\tif err != nil {")
 	g.P("\t\treturn err")
 	g.P("\t}")
@@ -384,11 +400,14 @@ func emitResolveMaskedFormatVerb(g *protogen.GeneratedFile) {
 
 func emitFieldParsers(g *protogen.GeneratedFile, cfg *configInfo) error {
 	for _, field := range cfg.Message.Fields {
-		if !field.NeedsStringParser() {
+		if !field.NeedsJSONFieldParser() && !field.NeedsStringParser() {
 			continue
 		}
 		if err := emitFieldParser(g, field); err != nil {
 			return err
+		}
+		if field.NeedsJSONFieldParser() {
+			emitConfigFileFieldParser(g, field)
 		}
 	}
 	return nil
@@ -426,15 +445,47 @@ func emitEnumFieldParserBody(g *protogen.GeneratedFile, field *configFieldInfo) 
 		g.P("\t\t&", configPkg.Ident("EnumMapping"), "{Name: ", strconv.Quote(m.CLIValue), ", Number: ", m.Number, "},")
 	}
 	g.P("\t}")
+	g.P("\tv, err := ", configPkg.Ident("ParseEnum"), "(raw, mappings, ", strconv.Quote(field.EnumTypeName), ")")
+	g.P("\tif err == nil {")
+	g.P("\t\treturn ", g.QualifiedGoIdent(field.EnumGoIdent), "(v), nil")
+	g.P("\t}")
+	for _, enumValue := range field.EnumValues {
+		g.P("\tif raw == ", strconv.Quote(enumValue.ProtoName), " {")
+		g.P("\t\treturn ", g.QualifiedGoIdent(field.EnumGoIdent), "(", enumValue.Number, "), nil")
+		g.P("\t}")
+	}
 	g.P("\tif v, err := ", strconvPkg.Ident("ParseInt"), "(raw, 10, 32); err == nil {")
 	g.P("\t\treturn ", g.QualifiedGoIdent(field.EnumGoIdent), "(v), nil")
 	g.P("\t}")
-	g.P("\tv, err := ", configPkg.Ident("ParseEnum"), "(raw, mappings, ", strconv.Quote(field.EnumTypeName), ")")
-	g.P("\tif err != nil {")
-	g.P("\t\treturn 0, err")
-	g.P("\t}")
-	g.P("\treturn ", g.QualifiedGoIdent(field.EnumGoIdent), "(v), nil")
+	g.P("\treturn 0, err")
 	return nil
+}
+
+func emitConfigFileFieldParser(g *protogen.GeneratedFile, field *configFieldInfo) {
+	funcName := configFileFieldParserName(field)
+	g.P("func ", funcName, "(raw ", encodingJSONPkg.Ident("RawMessage"), ") (any, error) {")
+	g.P("\tif string(raw) == \"null\" {")
+	g.P("\t\treturn nil, nil")
+	g.P("\t}")
+	g.P("\tvar text string")
+	g.P("\tif err := ", encodingJSONPkg.Ident("Unmarshal"), "(raw, &text); err == nil {")
+	g.P("\t\tv, err := ", configFieldParserName(field), "(text)")
+	g.P("\t\tif err != nil {")
+	g.P("\t\t\treturn nil, err")
+	g.P("\t\t}")
+	g.P("\t\treturn int32(v), nil")
+	g.P("\t}")
+	g.P("\tvar n int32")
+	g.P("\tif err := ", encodingJSONPkg.Ident("Unmarshal"), "(raw, &n); err == nil {")
+	g.P("\t\tv, err := ", configFieldParserName(field), "(", strconvPkg.Ident("FormatInt"), "(int64(n), 10))")
+	g.P("\t\tif err != nil {")
+	g.P("\t\t\treturn nil, err")
+	g.P("\t\t}")
+	g.P("\t\treturn int32(v), nil")
+	g.P("\t}")
+	g.P("\treturn nil, ", fmtPkg.Ident("Errorf"), "(\"expected string or number JSON value\")")
+	g.P("}")
+	g.P()
 }
 
 func scalarConfigParserName(kind protoreflect.Kind) (string, bool) {
@@ -466,6 +517,10 @@ func scalarConfigParserName(kind protoreflect.Kind) (string, bool) {
 
 func configFieldParserName(field *configFieldInfo) string {
 	return "parseRuntimeConfigField" + field.GoName
+}
+
+func configFileFieldParserName(field *configFieldInfo) string {
+	return "parseRuntimeConfigJSONField" + field.GoName
 }
 
 func configFieldGoType(g *protogen.GeneratedFile, field *configFieldInfo) any {
