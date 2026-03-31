@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -14,6 +15,8 @@ import (
 // JSONFieldParser rewrites a top-level config JSON field before protojson
 // unmarshaling. The returned value must be JSON-marshalable.
 type JSONFieldParser func(raw json.RawMessage) (any, error)
+
+var jsonNull = []byte("null")
 
 // MergeJSONFile overlays top-level JSON fields from path onto dst.
 // This enables defaults -> file merge without dropping pre-populated defaults.
@@ -158,7 +161,7 @@ func parseJSONOverlay(
 		seenFields[canonicalField] = field
 
 		overlay[canonicalField] = value
-		if string(value) == "null" {
+		if bytes.Equal(bytes.TrimSpace(value), jsonNull) {
 			continue
 		}
 		presentFields[canonicalField] = struct{}{}
@@ -171,6 +174,9 @@ func decodeJSONOverlayValue(
 	value json.RawMessage,
 	parsers map[string]JSONFieldParser,
 ) (any, error) {
+	if bytes.Equal(bytes.TrimSpace(value), jsonNull) {
+		return nil, nil
+	}
 	if parser := parsers[field]; parser != nil {
 		return parser(value)
 	}
