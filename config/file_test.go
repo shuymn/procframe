@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -51,5 +52,27 @@ func TestDecodeJSONOverlayValue_NullSkipsParser(t *testing.T) {
 	}
 	if got != nil {
 		t.Fatalf("want nil for null value, got %v", got)
+	}
+}
+
+func TestNormalizeJSONFieldParsers_RejectsCanonicalCollisions(t *testing.T) {
+	t.Parallel()
+
+	_, err := normalizeJSONFieldParsers(map[string]JSONFieldParser{
+		"apiToken": func(_ json.RawMessage) (any, error) {
+			return nil, nil
+		},
+		"api_token": func(_ json.RawMessage) (any, error) {
+			return nil, nil
+		},
+	}, map[string]string{
+		"apiToken":  "apiToken",
+		"api_token": "apiToken",
+	})
+	if err == nil {
+		t.Fatal("expected collision error")
+	}
+	if !strings.Contains(err.Error(), `"apiToken"`) || !strings.Contains(err.Error(), `"api_token"`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

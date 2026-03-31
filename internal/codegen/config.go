@@ -59,7 +59,7 @@ func emitLoadConfigFile(g *protogen.GeneratedFile, cfg *configInfo) {
 		if field.Required {
 			requiredFields = append(requiredFields, field)
 		}
-		if field.Kind == protoreflect.EnumKind {
+		if field.NeedsJSONFieldParser() {
 			enumFields = append(enumFields, field)
 		}
 	}
@@ -400,13 +400,13 @@ func emitResolveMaskedFormatVerb(g *protogen.GeneratedFile) {
 
 func emitFieldParsers(g *protogen.GeneratedFile, cfg *configInfo) error {
 	for _, field := range cfg.Message.Fields {
-		if field.Kind != protoreflect.EnumKind && !field.NeedsStringParser() {
+		if !field.NeedsJSONFieldParser() && !field.NeedsStringParser() {
 			continue
 		}
 		if err := emitFieldParser(g, field); err != nil {
 			return err
 		}
-		if field.Kind == protoreflect.EnumKind {
+		if field.NeedsJSONFieldParser() {
 			emitConfigFileFieldParser(g, field)
 		}
 	}

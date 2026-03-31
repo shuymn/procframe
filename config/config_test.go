@@ -1059,6 +1059,30 @@ func TestMergeJSONFile_SecretRedactionInErrors(t *testing.T) {
 			t.Fatalf("want parser applied via protobuf field name, got %q", dst.ApiToken)
 		}
 	})
+
+	t.Run("parser key canonical collision returns error", func(t *testing.T) {
+		t.Parallel()
+
+		path := writeConfigFile(t, `{"apiToken":"from-file"}`)
+
+		dst := &testv1.RuntimeConfig{}
+		parsers := map[string]config.JSONFieldParser{
+			"apiToken": func(raw json.RawMessage) (any, error) {
+				return string(raw), nil
+			},
+			"api_token": func(raw json.RawMessage) (any, error) {
+				return string(raw), nil
+			},
+		}
+
+		_, err := config.MergeJSONFileWithParsers(path, dst, parsers, "apiToken")
+		if err == nil {
+			t.Fatal("expected parser key collision error")
+		}
+		if !strings.Contains(err.Error(), `"apiToken"`) || !strings.Contains(err.Error(), `"api_token"`) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	})
 }
 
 // TestLoad_PartialFailureReturnsNil verifies that config

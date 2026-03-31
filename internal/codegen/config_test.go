@@ -488,6 +488,46 @@ func TestValidateConfigCollisions(t *testing.T) {
 	})
 }
 
+func TestConfigFieldInfoNeedsJSONFieldParser(t *testing.T) {
+	t.Parallel()
+
+	t.Run("singular enum needs parser", func(t *testing.T) {
+		t.Parallel()
+
+		field := &configFieldInfo{Kind: protoreflect.EnumKind}
+		if !field.NeedsJSONFieldParser() {
+			t.Fatal("want singular enum to need JSON field parser")
+		}
+	})
+
+	t.Run("repeated enum does not need parser", func(t *testing.T) {
+		t.Parallel()
+
+		field := &configFieldInfo{Kind: protoreflect.EnumKind, IsList: true}
+		if field.NeedsJSONFieldParser() {
+			t.Fatal("repeated enum should not need JSON field parser")
+		}
+	})
+
+	t.Run("map enum does not need parser", func(t *testing.T) {
+		t.Parallel()
+
+		field := &configFieldInfo{Kind: protoreflect.EnumKind, IsMap: true}
+		if field.NeedsJSONFieldParser() {
+			t.Fatal("map enum should not need JSON field parser")
+		}
+	})
+
+	t.Run("scalar non-enum does not need parser", func(t *testing.T) {
+		t.Parallel()
+
+		field := &configFieldInfo{Kind: protoreflect.StringKind}
+		if field.NeedsJSONFieldParser() {
+			t.Fatal("non-enum should not need JSON field parser")
+		}
+	})
+}
+
 func TestErrMultipleConfigMessages(t *testing.T) {
 	t.Parallel()
 
