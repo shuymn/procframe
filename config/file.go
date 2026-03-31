@@ -55,12 +55,14 @@ func mergeJSONFile(
 		return nil, err
 	}
 
-	rawOverlay, presentFields, err := parseJSONOverlay(data, configJSONFieldNames(dst))
+	fieldNames := configJSONFieldNames(dst)
+	rawOverlay, presentFields, err := parseJSONOverlay(data, fieldNames)
 	if err != nil {
 		return nil, fmt.Errorf("parse config file %q: %w", path, err)
 	}
+	normalizedParsers := normalizeJSONFieldParsers(parsers, fieldNames)
 	for k, raw := range rawOverlay {
-		v, decodeErr := decodeJSONOverlayValue(k, raw, parsers)
+		v, decodeErr := decodeJSONOverlayValue(k, raw, normalizedParsers)
 		if decodeErr != nil {
 			redactionData := data
 			if canonicalData, marshalErr := json.Marshal(rawOverlay); marshalErr == nil {
@@ -185,6 +187,21 @@ func decodeJSONOverlayValue(
 		return nil, err
 	}
 	return decoded, nil
+}
+
+func normalizeJSONFieldParsers(
+	parsers map[string]JSONFieldParser,
+	fieldNames map[string]string,
+) map[string]JSONFieldParser {
+	if len(parsers) == 0 {
+		return nil
+	}
+
+	normalized := make(map[string]JSONFieldParser, len(parsers))
+	for field, parser := range parsers {
+		normalized[canonicalJSONFieldName(field, fieldNames)] = parser
+	}
+	return normalized
 }
 
 func configJSONFieldNames(msg proto.Message) map[string]string {

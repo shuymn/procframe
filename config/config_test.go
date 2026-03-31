@@ -1032,6 +1032,33 @@ func TestMergeJSONFile_SecretRedactionInErrors(t *testing.T) {
 		}
 		checkNoInternalExposure(t, err.Error())
 	})
+
+	t.Run("parser lookup accepts protobuf field names", func(t *testing.T) {
+		t.Parallel()
+
+		path := writeConfigFile(t, `{
+			"api_token": "from-file"
+		}`)
+
+		dst := &testv1.RuntimeConfig{}
+		parsers := map[string]config.JSONFieldParser{
+			"api_token": func(raw json.RawMessage) (any, error) {
+				var decoded string
+				if err := json.Unmarshal(raw, &decoded); err != nil {
+					return nil, err
+				}
+				return decoded + "-parsed", nil
+			},
+		}
+
+		_, err := config.MergeJSONFileWithParsers(path, dst, parsers, "apiToken")
+		if err != nil {
+			t.Fatalf("MergeJSONFileWithParsers returned error: %v", err)
+		}
+		if dst.ApiToken != "from-file-parsed" {
+			t.Fatalf("want parser applied via protobuf field name, got %q", dst.ApiToken)
+		}
+	})
 }
 
 // TestLoad_PartialFailureReturnsNil verifies that config
