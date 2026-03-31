@@ -60,6 +60,7 @@ func mergeJSONFile(
 	if err != nil {
 		return nil, fmt.Errorf("parse config file %q: %w", path, err)
 	}
+	canonicalSecretFields := normalizeJSONFieldNames(secretFields, fieldNames)
 	normalizedParsers, err := normalizeJSONFieldParsers(parsers, fieldNames)
 	if err != nil {
 		return nil, fmt.Errorf("normalize config field parsers: %w", err)
@@ -75,7 +76,7 @@ func mergeJSONFile(
 				"parse config JSON field "+strconv.Quote(k),
 				decodeErr,
 				redactionData,
-				secretFields,
+				canonicalSecretFields,
 			)
 		}
 		base[k] = v
@@ -86,7 +87,12 @@ func mergeJSONFile(
 		return nil, fmt.Errorf("marshal merged config JSON: %w", err)
 	}
 	if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(merged, dst); err != nil {
-		return nil, redactSecretError("unmarshal merged config JSON", err, merged, secretFields)
+		return nil, redactSecretError(
+			"unmarshal merged config JSON",
+			err,
+			merged,
+			canonicalSecretFields,
+		)
 	}
 	return presentFields, nil
 }
@@ -212,6 +218,20 @@ func normalizeJSONFieldParsers(
 		origins[canonical] = field
 	}
 	return normalized, nil
+}
+
+func normalizeJSONFieldNames(fields []string, fieldNames map[string]string) []string {
+	if len(fields) == 0 {
+		return nil
+	}
+
+	normalized := make([]string, 0, len(fields))
+	seen := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		canonical := canonicalJSONFieldName(field, fieldNames)
+		normalized = appendUniqueToken(normalized, seen, canonical)
+	}
+	return normalized
 }
 
 func configJSONFieldNames(msg proto.Message) map[string]string {
