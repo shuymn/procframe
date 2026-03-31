@@ -343,10 +343,6 @@ func parseConfigValueForValidation(field *configFieldInfo, raw string) (any, err
 	case protoreflect.BytesKind:
 		return config.ParseBytes(raw)
 	case protoreflect.EnumKind:
-		if v, err := strconv.ParseInt(raw, 10, 32); err == nil {
-			return int32(v), nil
-		}
-
 		mappings, err := enumCLIValues(field.EnumTypeName, field.EnumValues)
 		if err != nil {
 			return nil, err
@@ -358,7 +354,19 @@ func parseConfigValueForValidation(field *configFieldInfo, raw string) (any, err
 				Number: m.Number,
 			})
 		}
-		return config.ParseEnum(raw, enumMappings, field.EnumTypeName)
+		v, enumErr := config.ParseEnum(raw, enumMappings, field.EnumTypeName)
+		if enumErr == nil {
+			return v, nil
+		}
+		for _, enumValue := range field.EnumValues {
+			if raw == enumValue.ProtoName {
+				return enumValue.Number, nil
+			}
+		}
+		if v, err := strconv.ParseInt(raw, 10, 32); err == nil {
+			return int32(v), nil
+		}
+		return 0, enumErr
 	case protoreflect.MessageKind, protoreflect.GroupKind:
 		return nil, fmt.Errorf("unsupported kind %s", field.Kind)
 	default:

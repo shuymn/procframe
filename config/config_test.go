@@ -439,6 +439,74 @@ func TestGeneratedConfigLoad(t *testing.T) {
 		}
 	})
 
+	t.Run("file accepts enum alias", func(t *testing.T) {
+		t.Setenv("API_TOKEN", "env-token")
+
+		path := writeConfigFile(t, `{"logLevel":"debug"}`)
+		cfg, _, err := config.Load[testv1.RuntimeConfig]([]string{"--config", path, "echo"})
+		if err != nil {
+			t.Fatalf("Load returned error: %v", err)
+		}
+		if cfg.LogLevel != testv1.LogLevel_LOG_LEVEL_DEBUG {
+			t.Fatalf("want log level from alias, got %v", cfg.LogLevel)
+		}
+	})
+
+	t.Run("file accepts proto enum name", func(t *testing.T) {
+		t.Setenv("API_TOKEN", "env-token")
+
+		path := writeConfigFile(t, `{"logLevel":"LOG_LEVEL_DEBUG"}`)
+		cfg, _, err := config.Load[testv1.RuntimeConfig]([]string{"--config", path, "echo"})
+		if err != nil {
+			t.Fatalf("Load returned error: %v", err)
+		}
+		if cfg.LogLevel != testv1.LogLevel_LOG_LEVEL_DEBUG {
+			t.Fatalf("want log level from proto enum name, got %v", cfg.LogLevel)
+		}
+	})
+
+	t.Run("file accepts enum number", func(t *testing.T) {
+		t.Setenv("API_TOKEN", "env-token")
+
+		path := writeConfigFile(t, `{"logLevel":2}`)
+		cfg, _, err := config.Load[testv1.RuntimeConfig]([]string{"--config", path, "echo"})
+		if err != nil {
+			t.Fatalf("Load returned error: %v", err)
+		}
+		if cfg.LogLevel != testv1.LogLevel_LOG_LEVEL_DEBUG {
+			t.Fatalf("want log level from enum number, got %v", cfg.LogLevel)
+		}
+	})
+
+	t.Run("file accepts enum numeric string", func(t *testing.T) {
+		t.Setenv("API_TOKEN", "env-token")
+
+		path := writeConfigFile(t, `{"logLevel":"2"}`)
+		cfg, _, err := config.Load[testv1.RuntimeConfig]([]string{"--config", path, "echo"})
+		if err != nil {
+			t.Fatalf("Load returned error: %v", err)
+		}
+		if cfg.LogLevel != testv1.LogLevel_LOG_LEVEL_DEBUG {
+			t.Fatalf("want log level from enum numeric string, got %v", cfg.LogLevel)
+		}
+	})
+
+	t.Run("file rejects invalid enum alias with allowed values", func(t *testing.T) {
+		t.Setenv("API_TOKEN", "env-token")
+
+		path := writeConfigFile(t, `{"logLevel":"trace"}`)
+		_, _, err := config.Load[testv1.RuntimeConfig]([]string{"--config", path, "echo"})
+		if err == nil {
+			t.Fatal("expected invalid enum error")
+		}
+		if !strings.Contains(err.Error(), `invalid LogLevel value "trace"`) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !strings.Contains(err.Error(), "info, debug") {
+			t.Fatalf("want allowed values in error, got: %v", err)
+		}
+	})
+
 	t.Run("missing required field returns error", func(t *testing.T) {
 		_, _, err := config.Load[testv1.RuntimeConfig]([]string{"echo", "run"})
 		if err == nil {

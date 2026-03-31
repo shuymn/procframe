@@ -3,6 +3,7 @@
 package testv1
 
 import (
+	json "encoding/json"
 	fmt "fmt"
 	config "github.com/shuymn/procframe/config"
 	protojson "google.golang.org/protobuf/encoding/protojson"
@@ -15,7 +16,7 @@ type runtimeConfigFieldPresence struct {
 }
 
 func loadRuntimeConfigFile(cfg *RuntimeConfig, presence *runtimeConfigFieldPresence, filePath string) error {
-	presentFields, err := config.MergeJSONFile(filePath, cfg, "apiToken", "secretPort")
+	presentFields, err := config.MergeJSONFileWithParsers(filePath, cfg, map[string]config.JSONFieldParser{"logLevel": parseRuntimeConfigJSONFieldLogLevel}, "apiToken", "secretPort")
 	if err != nil {
 		return err
 	}
@@ -213,14 +214,46 @@ func parseRuntimeConfigFieldLogLevel(raw string) (LogLevel, error) {
 		&config.EnumMapping{Name: "info", Number: 1},
 		&config.EnumMapping{Name: "debug", Number: 2},
 	}
+	v, err := config.ParseEnum(raw, mappings, "LogLevel")
+	if err == nil {
+		return LogLevel(v), nil
+	}
+	if raw == "LOG_LEVEL_UNSPECIFIED" {
+		return LogLevel(0), nil
+	}
+	if raw == "LOG_LEVEL_INFO" {
+		return LogLevel(1), nil
+	}
+	if raw == "LOG_LEVEL_DEBUG" {
+		return LogLevel(2), nil
+	}
 	if v, err := strconv.ParseInt(raw, 10, 32); err == nil {
 		return LogLevel(v), nil
 	}
-	v, err := config.ParseEnum(raw, mappings, "LogLevel")
-	if err != nil {
-		return 0, err
+	return 0, err
+}
+
+func parseRuntimeConfigJSONFieldLogLevel(raw json.RawMessage) (any, error) {
+	if string(raw) == "null" {
+		return nil, nil
 	}
-	return LogLevel(v), nil
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		v, err := parseRuntimeConfigFieldLogLevel(text)
+		if err != nil {
+			return nil, err
+		}
+		return int32(v), nil
+	}
+	var n int32
+	if err := json.Unmarshal(raw, &n); err == nil {
+		v, err := parseRuntimeConfigFieldLogLevel(strconv.FormatInt(int64(n), 10))
+		if err != nil {
+			return nil, err
+		}
+		return int32(v), nil
+	}
+	return nil, fmt.Errorf("expected string or number JSON value")
 }
 
 func parseRuntimeConfigFieldTimeoutSec(raw string) (int32, error) {
