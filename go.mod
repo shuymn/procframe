@@ -2,7 +2,7 @@ module github.com/shuymn/procframe
 
 go 1.25
 
-toolchain go1.26.1
+toolchain go1.26.2
 
 require (
 	connectrpc.com/connect v1.19.1
