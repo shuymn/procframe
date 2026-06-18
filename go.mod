@@ -6,6 +6,6 @@ toolchain go1.26.4
 
 require (
 	connectrpc.com/connect v1.20.0
-	github.com/coder/websocket v1.8.14
+	github.com/coder/websocket v1.8.15
 	google.golang.org/protobuf v1.36.11
 )
