@@ -4,7 +4,7 @@ package largeprotov1
 
 import (
 	bufio "bufio"
-	connect1 "connectrpc.com/connect"
+	connect1 "connectrpc.com/connect/v2"
 	context "context"
 	json "encoding/json"
 	flag "flag"
