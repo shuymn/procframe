@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	connectrpc "connectrpc.com/connect"
+	connectrpc "connectrpc.com/connect/v2"
 
 	"github.com/shuymn/procframe"
 	testv1 "github.com/shuymn/procframe/internal/gen/test/v1"

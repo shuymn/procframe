@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	connectrpc "connectrpc.com/connect"
+	connectrpc "connectrpc.com/connect/v2"
 
 	"github.com/shuymn/procframe"
 	largeprotov1 "github.com/shuymn/procframe/internal/gen/test/largeproto/v1"
