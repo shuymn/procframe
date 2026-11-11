@@ -3,7 +3,7 @@ package connect
 import (
 	"errors"
 
-	connectrpc "connectrpc.com/connect"
+	connectrpc "connectrpc.com/connect/v2"
 
 	"github.com/shuymn/procframe"
 )

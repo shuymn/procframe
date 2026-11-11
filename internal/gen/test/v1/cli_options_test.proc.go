@@ -3,7 +3,7 @@
 package testv1
 
 import (
-	connect1 "connectrpc.com/connect"
+	connect1 "connectrpc.com/connect/v2"
 	context "context"
 	json "encoding/json"
 	flag "flag"

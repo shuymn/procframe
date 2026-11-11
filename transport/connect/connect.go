@@ -7,7 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	connectrpc "connectrpc.com/connect"
+	connectrpc "connectrpc.com/connect/v2"
 
 	"github.com/shuymn/procframe"
 )
